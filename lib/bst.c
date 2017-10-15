@@ -4,59 +4,70 @@
 #include <bst.h>
 
 
+typedef struct node node_t;
 struct node
 {
     void *key;
     void *value;
+    int balance;
     struct node *left;
     struct node *right;
 };
 
-typedef struct node node_t;
-
 // typedeffed to bst_t in "bst.h"
+// lazy height
+// height[0] = is_height_up_to_date
+// height[1] = actual_height
 struct bst
 {
-    TYPE type;
     node_t *root;
+    TYPE type;
     int size;
+    int height[2];
 };
 
 
 // PRIVATE DECLARATIONS
 
+static int bst_height_aux(node_t *n);
+static void bst_apply_aux(node_t *n, void (*f)(void *, void *));
+static void bst_free_aux(node_t *n, void (*f)(void *));
+
 static node_t *node_new(TYPE t, void *key, void *value);
 static void balance(node_t **node_ptr, node_t **parent_ptr, node_t **grand_parent_ptr);
 static void left_rotate(node_t **parent_ptr);
 static void right_rotate(node_t **parent_ptr);
-static void bst_apply_aux(node_t *n, void (*f)(void *, void *));
+
 static int compare(TYPE t, void *v1, void *v2);
 static void *duplicate(TYPE t, void *v);
 static char *strdup(const char *s);
+static int max(int a, int b);
 
 
 // PUBLIC
 
 int bst_size(bst_t *bst)
 {
+    if (bst == NULL)
+	return -1;
+    
     return bst->size;
-}
-
-int max(int a, int b)
-{
-    return a > b ? a : b;
-}
-
-int bst_height_aux(node_t *node)
-{
-    return node == NULL
-	? 0
-	: 1 + max(bst_height_aux(node->left), bst_height_aux(node->right));
 }
 
 int bst_height(bst_t *bst)
 {
-    return bst == NULL ? 0 : bst_height_aux(bst->root);
+    if (bst == NULL)
+	return -1;
+    
+    if (bst->height[0])
+	return bst->height[1];
+
+    int height = bst_height_aux(bst->root);
+    
+    bst->height[0] = 1;
+    bst->height[1] = height;
+    
+    return height;
 }
 
 bst_t *bst_new(TYPE t)
@@ -65,12 +76,52 @@ bst_t *bst_new(TYPE t)
 
     if (new_bst != NULL)
     {
-	new_bst->type = t;
 	new_bst->root = NULL;
+	new_bst->type = t;
 	new_bst->size = 0;
+	new_bst->height[0] = 0;
+	new_bst->height[1] = 0;
     }
 
     return new_bst;
+}
+
+int bst_insert_aux(node_t **np, TYPE t, void *k, void *v)
+{
+    if (*np == NULL)
+    {
+	node_t *new_node = node_new(t, k, v);
+
+	if (new_node != NULL)
+	{
+	    *np = new_node;
+	    //bst->size++;
+	    //bst->height[0] = 0;
+	    
+	    balance(iterator, parent, grand_parent);
+	}
+
+	return new_node != NULL ? 1 : 0;
+    }
+
+    int c = compare(t, k, (*np)->key);
+    assert(c != 0 && "keys must be unique");
+    node_t **next = c < 0 ? &((*np)->left) : &((*np)->right);
+    int pre_bal = *next != NULL ? (*next)->balance : 0;
+    int result = bst_insert_aux(next, t, k, v);
+    int post_bal = *next != NULL ? (*next)->balance : 0;
+
+    // can't calculate balance difference based on left and right subtree
+    // height since that would mean having to calculate height of one of them.
+    // instead compare the previous balance value with the new one
+    // find a good case for when the new node occurred
+    if (result && pre_bal != post_bal)
+    {
+	
+	(*np)->balance += c < 0 ? -1 : 1;
+    }
+    
+    return result;
 }
 
 int bst_insert(bst_t *bst, void *key, void *value)
@@ -99,6 +150,7 @@ int bst_insert(bst_t *bst, void *key, void *value)
     {
 	*iterator = new_node;
 	bst->size++;
+	bst->height[0] = 0;
 	
 	balance(iterator, parent, grand_parent);
     }
@@ -109,6 +161,10 @@ int bst_insert(bst_t *bst, void *key, void *value)
 void bst_remove(bst_t *bst, void *key)
 {
     // TBI
+    // Re-balance
+    // Decrease size
+    // Reset height
+    // Set node balances
 }
 
 void *bst_search(bst_t *bst, void *key)
@@ -139,9 +195,47 @@ void bst_apply(bst_t *bst, void (*f)(void *, void *))
     bst_apply_aux(bst->root, f);
 }
 
+void bst_free(bst_t *bst, void (*value_free_fn)(void *))
+{
+    bst_free_aux(bst->root, value_free_fn);
+    free(bst);
+}
+
 
 // PRIVATE
 // No need for assertions for programmer errors in private functions
+
+int bst_height_aux(node_t *node)
+{
+    return node == NULL
+	? 0 : 1 + max(bst_height_aux(node->left), bst_height_aux(node->right));
+}
+
+static void bst_apply_aux(node_t *n, void (*f)(void *, void *))
+{
+    if (n != NULL)
+    {
+	bst_apply_aux(n->left, f);
+	f(n->key, n->value);
+	bst_apply_aux(n->right, f);
+    }
+}
+
+static void bst_free_aux(node_t *n, void (*f)(void *))
+{
+    if (n != NULL)
+    {
+	bst_free_aux(n->left, f);
+	bst_free_aux(n->right, f);
+	// Might need to revise this w.r.t. future expansion of TYPE
+	free(n->key);
+	
+	if (f != NULL)
+	    f(n->value);
+
+	free(n);
+    }
+}
 
 static node_t *node_new(TYPE t, void *key, void *value)
 {
@@ -156,6 +250,7 @@ static node_t *node_new(TYPE t, void *key, void *value)
     {
 	node->key = key_dup;
 	node->value = value;
+	node->balance = 0;
 	node->left = NULL;
 	node->right = NULL;
     }
@@ -215,40 +310,6 @@ static void right_rotate(node_t **parent_ptr)
     *parent_ptr = pivot;
 }
 
-//static void left_rotate(node_t *node)
-//{
-//    // Swap node and right subtree, parent now points to right subtree
-//    node_t copy = *node;
-//    *node = *(node->right);
-//    *(node->right) = copy;
-//
-//    // Node's right subtree will be right's left subtree after rotation
-//    node->right = node->right->left;
-//    node->right->left = NULL;
-//}
-//
-//static void right_rotate(node_t *node)
-//{
-//    // Swap node and left subtree, parent now points to left subtree
-//    node_t copy = *node;
-//    *node = *(node->left);
-//    *(node->left) = copy;
-//
-//    // Node's left subtree will be left's right subtree after rotation
-//    node->left = node->left->right;
-//    node->left->right = NULL;
-//}
-
-static void bst_apply_aux(node_t *n, void (*f)(void *, void *))
-{
-    if (n != NULL)
-    {
-	bst_apply_aux(n->left, f);
-	f(n->key, n->value);
-	bst_apply_aux(n->right, f);
-    }
-}
-
 static int compare(TYPE t, void *v1, void *v2)
 {
     int c = 0;
@@ -294,4 +355,9 @@ static char *strdup(const char *s)
     }
 
     return d;
+}
+
+int max(int a, int b)
+{
+    return a > b ? a : b;
 }

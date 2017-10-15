@@ -70,4 +70,6 @@ void *bst_search(bst_t *bst, void *key);
  */
 void bst_apply(bst_t *bst, void (*f)(void *, void *));
 
+void bst_free(bst_t *bst, void (*value_free_fn)(void *));
+
 #endif

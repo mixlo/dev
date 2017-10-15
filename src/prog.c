@@ -17,7 +17,7 @@ char *strdup(const char *s)
 
 void print_tree(void *k, void *v)
 {
-    printf("Key: %d\nValue: %s\n", *((int *)k), (char *)v);
+    printf("Key: %d\tValue: %s\n", *((int *)k), (char *)v);
 }
 
 void print(bst_t *bst)
@@ -27,6 +27,11 @@ void print(bst_t *bst)
     puts("");
 }
 
+void free_data(void *data)
+{
+    free(data);
+}
+
 int main()
 {
     bst_t *bst = bst_new(INT);
@@ -34,15 +39,18 @@ int main()
     int a=1, b=2, c=3, d=4, e=5;
 
     print(bst);
-    bst_insert(bst, &a, NULL);
+    bst_insert(bst, &a, malloc(sizeof(char)*10));
     print(bst);
-    bst_insert(bst, &b, NULL);
+    bst_insert(bst, &b, malloc(sizeof(char)*20));
     print(bst);
-    bst_insert(bst, &c, NULL);
+    bst_insert(bst, &c, malloc(sizeof(char)*30));
     print(bst);
-    bst_insert(bst, &d, NULL);
+    bst_insert(bst, &d, malloc(sizeof(char)*40));
     print(bst);
-    bst_insert(bst, &e, NULL);
+    bst_insert(bst, &e, malloc(sizeof(char)*50));
+    print(bst);
+
+    bst_free(bst, free_data);
     print(bst);
 
     return 0;
