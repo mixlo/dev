@@ -20,12 +20,17 @@ prog.out: $(SRC_DIR)/prog.c bst.o
 extractor.out: $(SRC_DIR)/extractor.c
 	$(CC) $(CC_FLAGS) -o $(BIN_DIR)/$@ $+
 
+test_wav.out: $(SRC_DIR)/test_wav.c $(OBJ_DIR)/wav.o
+	$(CC) $(CC_FLAGS) -o $(BIN_DIR)/$@ $+
+
 
 
 $(OBJ_DIR)/%.o: $(LIB_DIR)/%.c
 	$(CC) $(CC_FLAGS) -o $(OBJ_DIR)/$(@F) $< -c
 
 llist.o: $(OBJ_DIR)/llist.o
+bst.o: $(OBJ_DIR)/bst.o
+wav.o: $(OBJ_DIR)/wav.o
 
 $(BIN_DIR)/llist.tst: $(TST_DIR)/llist_test.c $(OBJ_DIR)/llist.o
 	$(CC) $(CC_FLAGS) -o $(BIN_DIR)/$@ $+ -lcunit
