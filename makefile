@@ -21,7 +21,7 @@ extractor.out: $(SRC_DIR)/extractor.c
 	$(CC) $(CC_FLAGS) -o $(BIN_DIR)/$@ $+
 
 test_wav.out: $(SRC_DIR)/test_wav.c $(OBJ_DIR)/wav.o
-	$(CC) $(CC_FLAGS) -o $(BIN_DIR)/$@ $+
+	$(CC) $(CC_FLAGS) -lm -o $(BIN_DIR)/$@ $+
 
 
 
@@ -42,4 +42,4 @@ $(DOC_DIR)/%.doc: $(CFG_DIR)/%.cfg
 	doxygen $< > /dev/null
 
 clean:
-	rm -rf ./bin/* ./obj/*.o ./doc/*
+	rm -rf ./bin/*.out ./obj/*.o ./doc/*
