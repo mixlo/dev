@@ -14,13 +14,20 @@ OBJ_FILES := $(patsubst lib/%.c, %.o, $(wildcard lib/*.c))
 
 all: $(OBJ_FILES)
 
+llist.o: $(OBJ_DIR)/llist.o
+bst.o: $(OBJ_DIR)/bst.o
+comp.o: $(OBJ_DIR)/comp.o
+wav.o: $(OBJ_DIR)/wav.o
+
+
+
 prog.out: $(SRC_DIR)/prog.c bst.o
 	$(CC) $(CC_FLAGS) -o $(BIN_DIR)/$@ $+
 
 extractor.out: $(SRC_DIR)/extractor.c
 	$(CC) $(CC_FLAGS) -o $(BIN_DIR)/$@ $+
 
-test_wav.out: $(SRC_DIR)/test_wav.c $(OBJ_DIR)/wav.o
+test_wav.out: $(SRC_DIR)/test_wav.c $(OBJ_DIR)/wav.o $(OBJ_DIR)/llist.o $(OBJ_DIR)/comp.o
 	$(CC) $(CC_FLAGS) -lm -o $(BIN_DIR)/$@ $+
 
 
@@ -28,9 +35,7 @@ test_wav.out: $(SRC_DIR)/test_wav.c $(OBJ_DIR)/wav.o
 $(OBJ_DIR)/%.o: $(LIB_DIR)/%.c
 	$(CC) $(CC_FLAGS) -o $(OBJ_DIR)/$(@F) $< -c
 
-llist.o: $(OBJ_DIR)/llist.o
-bst.o: $(OBJ_DIR)/bst.o
-wav.o: $(OBJ_DIR)/wav.o
+
 
 $(BIN_DIR)/llist.tst: $(TST_DIR)/llist_test.c $(OBJ_DIR)/llist.o
 	$(CC) $(CC_FLAGS) -o $(BIN_DIR)/$@ $+ -lcunit

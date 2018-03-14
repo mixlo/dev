@@ -86,6 +86,8 @@ bst_t *bst_new(TYPE t)
     return new_bst;
 }
 
+/*     #####    FIX THIS    #####
+
 int bst_insert_aux(node_t **np, TYPE t, void *k, void *v)
 {
     if (*np == NULL)
@@ -123,6 +125,7 @@ int bst_insert_aux(node_t **np, TYPE t, void *k, void *v)
     
     return result;
 }
+*/
 
 int bst_insert(bst_t *bst, void *key, void *value)
 {

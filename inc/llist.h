@@ -24,6 +24,15 @@
 typedef struct llist llist_t;
 
 /**
+ * @brief The declaration of the linked list iterator data type.
+ *
+ * A call to llist_get_iter() will return a pointer to a new @c llist_iter_t 
+ * iterator object. It is used to iterate through the data of each node in the 
+ * list, by using the function llist_iter_next().
+ */
+typedef struct llist_iter llist_iter_t;
+
+/**
  * @brief Creates a new, empty linked list.
  * 
  * If the @c free_fun argument is not @c NULL, it will be used during calls 
@@ -161,6 +170,47 @@ void *llist_get(llist_t *list, int index);
  * by @c eq_fun. If no equal element is found, @c NULL is returned.
  */
 void *llist_search(llist_t *list, bool (*eq_fun)(const void *, void *), void *cmp_val);
+
+/**
+ * @brief Creates a new, empty linked list.
+ * 
+ * If the @c free_fun argument is not @c NULL, it will be used during calls 
+ * to the llist_remove() and llist_free() functions.
+ * 
+ * @param free_fun A pointer to a function that, if not @c NULL, will be run 
+ * during a call to the llist_remove() and llist_free() functions. The function 
+ * will receive the data of the to be removed element, and its purpose is 
+ * to make it easier to simultaneously free both the memory taken up by an 
+ * element and the memory taken up by the element data.
+ * @return A reference to the newly created empty list.
+ */
+
+/**
+ * @brief Creates a new iterator object for the list provided.
+ *
+ * The first call to llist_iter_next() will return the data of the first node 
+ * in the list.
+ *
+ * @param list The list through which to iterate.
+ * @return A reference to the newly created iterator object.
+ */
+llist_iter_t *llist_get_iter(llist_t *list);
+
+/**
+ * @brief Returns the data of the next node in the iteration and advances the 
+ * iterator one step.
+ *
+ * @return The data of the next node in the iteration. If the next object in 
+ * the iteration is NULL, NULL is returned.
+ */
+void *llist_iter_next(llist_iter_t *iter);
+
+/**
+ * @brief Deletes the iterator object from memory.
+ *
+ * @param iter The iterator object to delete.
+ */
+void llist_iter_free(llist_iter_t *iter);
 
 /**
  * @brief Deletes the entire list from memory. 

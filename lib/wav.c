@@ -3,88 +3,155 @@
 #include <string.h>
 #include <stdbool.h>
 #include <math.h>
+#include <llist.h>
+#include <comp.h>
 #include <wav.h>
 
 #define PI 3.14159265358979323846
 
-static float FRQ[] = {
-    130.81, 138.59, 146.83, 155.56, 164.81, 174.61, 185.00, 196.00, 207.65, 220.00, 233.08, 246.94,
-    261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392.00, 415.30, 440.00, 466.16, 493.88,
-    523.25, 554.37, 587.33, 622.25, 659.25, 698.46, 739.99, 783.99, 830.61, 880.00, 932.33, 987.77
-};
-
-enum note {
-    C3, CS3, D3, DS3, E3, F3, FS3, G3, GS3, A3, AS3, B3,
-    C4, CS4, D4, DS4, E4, F4, FS4, G4, GS4, A4, AS4, B4,
-    C5, CS5, D5, DS5, E5, F5, FS5, G5, GS5, A5, AS5, B5
-};
-
 typedef struct chunk_fmt chunk_fmt_t;
+typedef struct chunk_data chunk_data_t;
+
+struct wav
+{
+    chunk_fmt_t  *fmt;
+    chunk_data_t *data;
+    unsigned int  delay;
+    double        speed;
+};
+
 struct chunk_fmt
 {
-    unsigned int size;
     unsigned short audio_fmt;
     unsigned short num_chnls;
-    unsigned int smpl_rate;
-    unsigned int byte_rate;
+    unsigned int   smpl_rate;
     unsigned short blk_align;
     unsigned short bps;
 };
 
-typedef struct chunk_data chunk_data_t;
 struct chunk_data
 {
-    unsigned int size;
-    unsigned char *data;
-};
-
-struct wav
-{
-    unsigned int size;
-    chunk_fmt_t *fmt;
-    chunk_data_t *data;
-    unsigned int delay;
-    double speed;
+    llist_t *samples;
 };
 
 
+/* ##########   PRIVATE DECLARATIONS   ########## */
 
-// PRIVATE DECLARATIONS
-
-static wav_t *wav_alloc(unsigned int size);
+static wav_t *wav_alloc();
 static chunk_fmt_t *fmt_alloc(
-    unsigned int size,
     unsigned short audio_fmt,
     unsigned short num_chnls,
-    unsigned int smpl_rate,
-    unsigned int byte_rate,
+    unsigned int   smpl_rate,
     unsigned short blk_align,
     unsigned short bps);
-static chunk_data_t *data_alloc(unsigned int size, unsigned char *data);
-static wav_t *read_chunk_desc(FILE *fp);
+static chunk_data_t *data_alloc(llist_t *samples);
+static void add_samples_by_comp(wav_t *wav, comp_t *comp);
+static wav_t *read_desc_chunk(FILE *fp);
 static chunk_fmt_t *read_fmt_chunk(FILE *fp);
-static chunk_data_t *read_data_chunk(FILE *fp);
+static chunk_data_t *read_data_chunk(FILE *fp, unsigned short sample_size);
+static unsigned int get_fmt_size(wav_t *wav);
+static unsigned int get_data_size(wav_t *wav);
+static unsigned int get_num_samples(wav_t *wav);
+static unsigned int get_num_delay_samples(wav_t *wav);
 static unsigned int get_sample_rate(wav_t *wav);
 static unsigned int get_byte_rate(wav_t *wav);
-static unsigned int get_data_size(wav_t *wav);
 static unsigned long get_amplitude(wav_t *wav);
+static float get_freq_rad(note_t note);
 static void write_delay(wav_t *wav, FILE *fp);
+
+/*
 static void write_test(wav_t *wav, FILE *fp);
 static void write_scale(wav_t *wav, FILE *fp);
 static void write_chord(wav_t *wav, FILE *fp);
+*/
 
 
+/* ##########   PUBLIC   ########## */
 
-// PUBLIC
-
-wav_t *wav_new()
+wav_t *wav_new(unsigned int smpl_rate, unsigned short num_chnls, unsigned short bps)
 {
-    return NULL;
+    wav_t *wav = wav_alloc();
+    if (wav == NULL) {
+	return NULL;
+    }
+
+    chunk_fmt_t *fmt = fmt_alloc(1, num_chnls, smpl_rate, num_chnls * bps / 8, bps);
+    if (fmt == NULL) {
+	free(wav);
+	return NULL;
+    }
+    
+    llist_t *samples = llist_new(&free);
+    if (samples == NULL) {
+	free(wav);
+	free(fmt);
+	return NULL;
+    }
+
+    // data_alloc() frees samples if it fails
+    chunk_data_t *data = data_alloc(samples);
+    if (data == NULL) {
+	free(wav);
+	free(fmt);
+	return NULL;
+    }
+    
+    wav->fmt = fmt;
+    wav->data = data;
+    
+    return wav;
 }
 
-wav_t *wav_new_comp()
+wav_t *wav_new_comp(unsigned smpl_rate, unsigned short num_chnls, unsigned short bps, comp_t *comp)
 {
-    return NULL;
+    wav_t *wav = wav_new(smpl_rate, num_chnls, bps);
+    add_samples_by_comp(wav, comp);
+    return wav;
+}
+
+static void add_samples_by_comp(wav_t *wav, comp_t *comp)
+{
+    double samples_per_second = get_sample_rate(wav);
+    double amp = get_amplitude(wav);
+
+    // Support for 32 bit samples
+    long current_sample;
+
+    // Support for 10 notes per chord
+    float radians_per_note[10];
+
+    llist_iter_t *chord_iter = comp_get_chords_iterator(comp);
+    chord_t *current_chord = NULL;
+    
+    while ((current_chord = llist_iter_next(chord_iter))) {
+	int chord_size = comp_get_chord_size(current_chord);
+	note_t *chord_notes = comp_get_chord_notes(current_chord);
+	
+	for (int n = 0; n < chord_size; n++)
+	    radians_per_note[n] = get_freq_rad(chord_notes[n]) / samples_per_second;
+	
+	double chord_seconds = comp_get_chord_duration(comp, current_chord);
+	unsigned long num_samples = samples_per_second * chord_seconds;
+
+	for (int i = 0; i < num_samples; i++) {
+	    // Sound waves for chords are the sum of the single note frequenzies
+	    double sample_phase = 0;
+	    for (int j = 0; j < chord_size; j++)
+		sample_phase += sin(radians_per_note[j] * i);
+
+	    // sin() returns within range [-1, 1], but the sum for all notes will
+	    // be in range [-chord_size, chord_size], so amplitude us divided by
+	    // chord_size to make sure sample size doesn't exceed bits per sample
+	    current_sample = (amp / chord_size) * sample_phase;
+
+	    // Currently, same sample in all channels
+	    unsigned char *sample_frame = malloc(sizeof *sample_frame * wav->fmt->blk_align);
+	    for (int j = 0; j < wav->fmt->num_chnls; j++)
+		memcpy(sample_frame + wav->fmt->blk_align * j, &current_sample, wav->fmt->bps / 8);
+	    
+	    llist_append(wav->data->samples, sample_frame);
+	}
+    }
 }
 
 wav_t *wav_from_file(char *filename)
@@ -93,18 +160,28 @@ wav_t *wav_from_file(char *filename)
     
     if (fp == NULL)
 	return NULL;
-    
-    wav_t *wav = read_chunk_desc(fp);
-    chunk_fmt_t *fmt = read_fmt_chunk(fp);
-    chunk_data_t *data = read_data_chunk(fp);
 
-    if (!wav || !fmt || !data) {
+    wav_t *wav = read_desc_chunk(fp);
+    if (wav == NULL) {
+	fclose(fp);
+	return NULL;
+    }
+
+    chunk_fmt_t *fmt = read_fmt_chunk(fp);
+    if (fmt == NULL) {
+	free(wav);
+	fclose(fp);
+	return NULL;
+    }
+
+    chunk_data_t *data = read_data_chunk(fp, fmt->blk_align);
+    if (data == NULL) {
 	free(wav);
 	free(fmt);
 	fclose(fp);
 	return NULL;
     }
-    
+
     wav->fmt = fmt;
     wav->data = data;
 
@@ -115,15 +192,17 @@ wav_t *wav_from_file(char *filename)
 void wav_free(wav_t *wav)
 {
     free(wav->fmt);
-    free(wav->data->data);
+    llist_free(wav->data->samples);
     free(wav->data);
     free(wav);
 }
 
 unsigned int wav_get_size(wav_t *wav)
 {
-    unsigned int sample_delay = wav->fmt->smpl_rate * wav->delay / 1000;
-    return wav->size + wav->fmt->blk_align * sample_delay;
+    unsigned int wave_tag_size = 4;
+    unsigned int fmt_chunk_size = get_fmt_size(wav) + 8;
+    unsigned int data_chunk_size = get_data_size(wav) + 8;
+    return wave_tag_size + fmt_chunk_size + data_chunk_size;
 }
 
 void wav_set_delay(wav_t *wav, unsigned int milliseconds)
@@ -146,6 +225,7 @@ void wav_to_file(wav_t *wav, char *filename)
     char *data_str = "data";
 
     unsigned int wav_size = wav_get_size(wav);
+    unsigned int fmt_size = get_fmt_size(wav);
     unsigned int data_size = get_data_size(wav);
     unsigned int smpl_rate = get_sample_rate(wav);
     unsigned int byte_rate = get_byte_rate(wav);
@@ -155,7 +235,7 @@ void wav_to_file(wav_t *wav, char *filename)
     fwrite(wave_str,   1, 4, fp);
 
     fwrite(fmt_str,              1, 4, fp);
-    fwrite(&wav->fmt->size,      4, 1, fp);
+    fwrite(&fmt_size,            4, 1, fp);
     fwrite(&wav->fmt->audio_fmt, 2, 1, fp);
     fwrite(&wav->fmt->num_chnls, 2, 1, fp);
     fwrite(&smpl_rate,           4, 1, fp);
@@ -169,12 +249,17 @@ void wav_to_file(wav_t *wav, char *filename)
     if (wav->delay)
 	write_delay(wav, fp);
 
+    llist_iter_t *sample_iter = llist_get_iter(wav->data->samples);
+    unsigned char *current_sample = NULL;
+    
+    while ((current_sample = llist_iter_next(sample_iter)))
+	fwrite(current_sample, wav->fmt->blk_align, 1, fp);
+    
     // This call seems to crash sometimes depending on delay, e.g. 5000
     //fwrite(wav->data->data, wav->data->size, 1, fp);
     //write_test(wav, fp);
-    write_scale(wav, fp);
+    //write_scale(wav, fp);
     //write_chord(wav, fp);
-
 
     fclose(fp);
 }
@@ -198,16 +283,25 @@ void wav_print_info(wav_t *wav)
 	   (double)get_sample_rate(wav));
 }
 
+// Takes a pointer to an entire sample frame, including all channels
+void wav_add_sample(wav_t *wav, void *sample)
+{
+    void *new_sample = malloc(wav->fmt->blk_align);
+    memcpy(new_sample, sample, wav->fmt->blk_align);
+    llist_append(wav->data->samples, new_sample);
+}
+
 
 
 /* ##########   PRIVATE   ########## */
 
-static wav_t *wav_alloc(unsigned int size)
+static wav_t *wav_alloc()
 {
     wav_t *wav = malloc(sizeof *wav);
 
     if (wav != NULL) {
-	wav->size = size;
+	wav->fmt = NULL;
+	wav->data = NULL;
 	wav->delay = 0;
 	wav->speed = 1.0;
     }
@@ -216,22 +310,18 @@ static wav_t *wav_alloc(unsigned int size)
 }
 
 static chunk_fmt_t *fmt_alloc(
-    unsigned int size,
     unsigned short audio_fmt,
     unsigned short num_chnls,
     unsigned int smpl_rate,
-    unsigned int byte_rate,
     unsigned short blk_align,
     unsigned short bps)
 {
     chunk_fmt_t *chunk = malloc(sizeof *chunk);
 
     if (chunk != NULL) {
-	chunk->size = size;
 	chunk->audio_fmt = audio_fmt;
 	chunk->num_chnls = num_chnls;
 	chunk->smpl_rate = smpl_rate;
-	chunk->byte_rate = byte_rate;
 	chunk->blk_align = blk_align;
 	chunk->bps = bps;
     }
@@ -239,19 +329,20 @@ static chunk_fmt_t *fmt_alloc(
     return chunk;
 }
 
-static chunk_data_t *data_alloc(unsigned int size, unsigned char *data)
+static chunk_data_t *data_alloc(llist_t *samples)
 {
     chunk_data_t *chunk = malloc(sizeof *chunk);
 
     if (chunk != NULL) {
-	chunk->size = size;
-	chunk->data = data;
+	chunk->samples = samples;
+    } else {
+	llist_free(samples);
     }
-    
+
     return chunk;
 }
 
-static wav_t *read_chunk_desc(FILE *fp)
+static wav_t *read_desc_chunk(FILE *fp)
 {
     char buffer[5];
     unsigned int size;
@@ -264,7 +355,7 @@ static wav_t *read_chunk_desc(FILE *fp)
     if (fgets(buffer, 5, fp) == NULL || strcmp(buffer, "WAVE") != 0)
 	return NULL;
 
-    return wav_alloc(size);
+    return wav_alloc();
 }
 
 static chunk_fmt_t *read_fmt_chunk(FILE *fp)
@@ -292,18 +383,10 @@ static chunk_fmt_t *read_fmt_chunk(FILE *fp)
     if (size != 16 || audio_fmt != 1) // PCM check
 	return NULL;
 
-    return fmt_alloc(
-	size,
-        audio_fmt,
-        num_chnls,
-        smpl_rate,
-        byte_rate,
-        blk_align,
-        bps
-    );
+    return fmt_alloc(audio_fmt, num_chnls, smpl_rate, blk_align, bps);
 }
 
-static chunk_data_t *read_data_chunk(FILE *fp)
+static chunk_data_t *read_data_chunk(FILE *fp, unsigned short sample_size)
 {
     char ID[5];
     unsigned int size;
@@ -313,10 +396,39 @@ static chunk_data_t *read_data_chunk(FILE *fp)
 
     fread(&size, 4, 1, fp);
 
-    unsigned char *data = malloc(sizeof *data * size);
-    fread(data, size, 1, fp);
+    llist_t *samples = llist_new(&free);
 
-    return data_alloc(size, data);
+    if (samples == NULL)
+	return NULL;
+
+    unsigned int num_samples = size / sample_size;
+    for (int i = 0; i < num_samples; i++) {
+	void *sample = malloc(sample_size);
+	fread(sample, sample_size, 1, fp);
+	llist_append(samples, sample);
+    }
+
+    return data_alloc(samples);
+}
+
+static unsigned int get_num_samples(wav_t *wav)
+{
+    return llist_length(wav->data->samples);
+}
+
+static unsigned int get_num_delay_samples(wav_t *wav)
+{
+    return get_sample_rate(wav) * wav->delay / 1000;
+}
+
+static unsigned int get_fmt_size(wav_t *wav)
+{
+    return wav->fmt->audio_fmt == 1 ? 16 : -1; // 16 bytes for PCM
+}
+
+static unsigned int get_data_size(wav_t *wav)
+{
+    return wav->fmt->blk_align * (get_num_samples(wav) + get_num_delay_samples(wav));
 }
 
 static unsigned int get_sample_rate(wav_t *wav)
@@ -326,118 +438,109 @@ static unsigned int get_sample_rate(wav_t *wav)
 
 static unsigned int get_byte_rate(wav_t *wav)
 {
-    return wav->fmt->byte_rate * wav->speed;
-}
-
-static unsigned int get_data_size(wav_t *wav)
-{
-    unsigned int sample_delay = wav->fmt->smpl_rate * wav->delay / 1000;
-    return wav->data->size += wav->fmt->blk_align * sample_delay;
+    return get_sample_rate(wav) * wav->fmt->blk_align;
 }
 
 static unsigned long get_amplitude(wav_t *wav)
 {
-    return (unsigned long)pow(2, wav->fmt->bps - 1) - 1;
+    return pow(2, wav->fmt->bps - 1) - 1;
 }
 
 static void write_delay(wav_t *wav, FILE *fp)
 {
-    unsigned int sample_delay = wav->fmt->smpl_rate * wav->delay / 1000;
-    unsigned char *null_sample = calloc(wav->fmt->blk_align, sizeof *null_sample);
+    unsigned int num_delay_samples = get_num_delay_samples(wav);
+    void *null_sample = calloc(1, wav->fmt->blk_align);
 
-    for (int i = 0; i < sample_delay; i++)
+    for (int i = 0; i < num_delay_samples; i++)
 	fwrite(null_sample, wav->fmt->blk_align, 1, fp);
 
     free(null_sample);
 }
 
+static float FRQ_RAD[] = {
+    130.81 * 2 * PI, 138.59 * 2 * PI, 146.83 * 2 * PI, 155.56 * 2 * PI,
+    164.81 * 2 * PI, 174.61 * 2 * PI, 185.00 * 2 * PI, 196.00 * 2 * PI,
+    207.65 * 2 * PI, 220.00 * 2 * PI, 233.08 * 2 * PI, 246.94 * 2 * PI,
+    261.63 * 2 * PI, 277.18 * 2 * PI, 293.66 * 2 * PI, 311.13 * 2 * PI,
+    329.63 * 2 * PI, 349.23 * 2 * PI, 369.99 * 2 * PI, 392.00 * 2 * PI,
+    415.30 * 2 * PI, 440.00 * 2 * PI, 466.16 * 2 * PI, 493.88 * 2 * PI,
+    523.25 * 2 * PI, 554.37 * 2 * PI, 587.33 * 2 * PI, 622.25 * 2 * PI,
+    659.25 * 2 * PI, 698.46 * 2 * PI, 739.99 * 2 * PI, 783.99 * 2 * PI,
+    830.61 * 2 * PI, 880.00 * 2 * PI, 932.33 * 2 * PI, 987.77 * 2 * PI
+};
+
+static float get_freq_rad(note_t note)
+{
+    switch (note) {
+    case C3 : return FRQ_RAD[ 0];
+    case CS3: return FRQ_RAD[ 1];
+    case D3 : return FRQ_RAD[ 2];
+    case DS3: return FRQ_RAD[ 3];
+    case E3 : return FRQ_RAD[ 4];
+    case F3 : return FRQ_RAD[ 5];
+    case FS3: return FRQ_RAD[ 6];
+    case G3 : return FRQ_RAD[ 7];
+    case GS3: return FRQ_RAD[ 8];
+    case A3 : return FRQ_RAD[ 9];
+    case AS3: return FRQ_RAD[10];
+    case B3 : return FRQ_RAD[11];
+    case C4 : return FRQ_RAD[12];
+    case CS4: return FRQ_RAD[13];
+    case D4 : return FRQ_RAD[14];
+    case DS4: return FRQ_RAD[15];
+    case E4 : return FRQ_RAD[16];
+    case F4 : return FRQ_RAD[17];
+    case FS4: return FRQ_RAD[18];
+    case G4 : return FRQ_RAD[19];
+    case GS4: return FRQ_RAD[20];
+    case A4 : return FRQ_RAD[21];
+    case AS4: return FRQ_RAD[22];
+    case B4 : return FRQ_RAD[23];
+    case C5 : return FRQ_RAD[24];
+    case CS5: return FRQ_RAD[25];
+    case D5 : return FRQ_RAD[26];
+    case DS5: return FRQ_RAD[27];
+    case E5 : return FRQ_RAD[28];
+    case F5 : return FRQ_RAD[29];
+    case FS5: return FRQ_RAD[30];
+    case G5 : return FRQ_RAD[31];
+    case GS5: return FRQ_RAD[32];
+    case A5 : return FRQ_RAD[33];
+    case AS5: return FRQ_RAD[34];
+    case B5 : return FRQ_RAD[35];
+    default:  return 0.00;
+    }
+}
+
+/*
 static void write_test(wav_t *wav, FILE *fp)
 {
-    float cycles_per_second = 440; // A4 = 440 Hz
-    float samples_per_second = 44100;
-    float cycles_per_sample = cycles_per_second / samples_per_second;
-    float radians_per_sample = cycles_per_sample * 2 * PI;
+    double cycles_per_second = 440; // A4 = 440 Hz
+    double samples_per_second = get_sample_rate(wav);
+    double cycles_per_sample = cycles_per_second / samples_per_second;
+    double radians_per_sample = cycles_per_sample * 2 * PI;
 
     // cycles_per_sample will be 0.01 here, meaning that it will take 100 samples to make 1 cycle
     // we convert it to radians to be able to use the sinus function to get the value of each
     // sample's position on the wave (phase)
     
-    int total_samples = wav->data->size / wav->fmt->blk_align;
-    float amp = 32000.0;
-    
-    short current_sample;
+    unsigned int total_samples = get_num_samples(wav);
+    unsigned long amp = get_amplitude(wav);
+
+    // support for 32 bit samples
+    long current_sample;
 
     for (int i = 0; i < total_samples; i++) {
 	// for each sample, take one step further on the x-axis
-	float xpos = radians_per_sample * i;
+	double xpos = radians_per_sample * i;
 	// calculate the phase on the sine wave for that step
-	float phase = sin(xpos);
+	double phase = sin(xpos);
 	// multiply by amplitude to get full sample
-	current_sample = (short)(amp * phase);
-	// write sample to file
-	fwrite(&current_sample, 2, 1, fp);
+	current_sample = amp * phase;
+	// write same sample to file for each channel
+	for (int j = 0; j < wav->fmt->num_chnls; j++) {
+	    fwrite(&current_sample, wav->fmt->bps / 8, 1, fp);
+	}
     }
 }
-
-static void write_scale(wav_t *wav, FILE *fp)
-{
-    // A3 to A5
-//    int scale_length = 25;
-//    float tones[] = {
-//	220.00, 233.08, 246.94, 261.63, 277.18,
-//	293.66, 311.13, 329.63, 349.23, 369.99,
-//	392.00, 415.30, 440.00, 466.16, 493.88,
-//	523.25, 554.37, 587.33, 622.25, 659.25,
-//	698.46, 739.99, 783.99, 830.61, 880.00
-//    };
-
-    int scale_length = 16;
-    float tones[] = {
-	FRQ[C5], FRQ[D5], FRQ[C5], FRQ[E5], FRQ[C5], FRQ[F5], FRQ[C5], FRQ[G5],
-	FRQ[C5], FRQ[F5], FRQ[C5], FRQ[E5], FRQ[C5], FRQ[D5], FRQ[C5], FRQ[C5]
-    };
-
-    float samples_per_second = wav->fmt->smpl_rate;
-    float radians_per_sample[scale_length];
-    for (int i = 0; i < scale_length; i++)
-	radians_per_sample[i] = tones[i] * 2 * PI / samples_per_second;
-
-    int total_samples = wav->data->size / wav->fmt->blk_align;
-    float amp = (float)get_amplitude(wav);
-    
-    float phase = 0;
-    short current;
-    int scale_index = 0;
-
-    for (int i = 0; i < total_samples; i++) {
-	scale_index = (int)(i*scale_length/total_samples);
-	phase = sin(radians_per_sample[scale_index] * i);
-	current = (short)(amp * phase);
-	fwrite(&current, 2, 1, fp);
-    }
-}
-
-static void write_chord(wav_t *wav, FILE *fp)
-{
-    float tones[] = {FRQ[E4], FRQ[G4], FRQ[C5]};
-    int chord_length = 3;
-
-    float samples_per_second = wav->fmt->smpl_rate;
-    float radians_per_sample[chord_length];
-    for (int i = 0; i < chord_length; i++)
-	radians_per_sample[i] = tones[i] * 2 * PI / samples_per_second;
-    
-    int total_samples = wav->data->size / wav->fmt->blk_align;
-    float amp = (float)get_amplitude(wav);
-    
-    short current_sample;
-
-    for (int i = 0; i < total_samples; i++) {
-	float chord_phase = 0;
-	for (int j = 0; j < chord_length; j++)
-	    chord_phase += sin(radians_per_sample[j] * i);
-	current_sample = (short)((amp / chord_length) * chord_phase);
-	fwrite(&current_sample, 2, 1, fp);
-    }
-}
-
+*/

@@ -5,12 +5,6 @@
 
 
 typedef struct node node_t;
-struct node
-{
-    void *data;
-    struct node *next;
-};
-
 struct llist
 {
     node_t *first;
@@ -19,12 +13,23 @@ struct llist
     void (*free_fun)(void *);
 };
 
+struct node
+{
+    void *data;
+    node_t *next;
+};
+
+struct llist_iter {
+    node_t *node;
+};
+
 
 // PRIVATE DECLARATIONS
 
 static node_t *node_new(void *data);
 static bool node_insert(node_t **node_ptr, void *data);
 static void *node_remove(node_t **node_ptr, void (*free_fun)(void *));
+static void *iter_new(llist_t *list);
 
 
 // PUBLIC FUNCTIONS
@@ -74,18 +79,54 @@ void *llist_last(llist_t *list)
 
 bool llist_prepend(llist_t *list, void *data)
 {
-    return llist_insert(list, data, 0);
+    assert(list != NULL && "list is null");
+
+    node_t *new_node = node_new(data);
+
+    if (new_node == NULL)
+	return false;
+
+    if (list->length == 0)
+	list->last = new_node;
+    else
+	new_node->next = list->first;
+    
+    list->first = new_node;
+    list->length++;
+    
+    return true;
 }
 
 bool llist_append(llist_t *list, void *data)
 {
-    return llist_insert(list, data, list->length);
+    assert(list != NULL && "list is null");
+
+    node_t *new_node = node_new(data);
+
+    if (new_node == NULL)
+	return false;
+
+    if (list->length == 0)
+	list->first = new_node;
+    else
+	list->last->next = new_node;
+
+    list->last = new_node;
+    list->length++;
+    
+    return true;
 }
 
 bool llist_insert(llist_t *list, void *data, int index)
 {
     assert(list != NULL && "list is null");
     assert(index >= 0 && index <= list->length && "index is out of bounds");
+
+    if (index == 0)
+	return llist_prepend(list, data);
+    
+    if (index == list->length)
+	return llist_append(list, data);
 
     node_t **iterator = &(list->first);
 
@@ -94,8 +135,8 @@ bool llist_insert(llist_t *list, void *data, int index)
     
     bool success = node_insert(iterator, data);
 
-    if (index == list->length++)
-	list->last = *iterator;
+    if (success)
+	list->length++;
 
     return success;
 }
@@ -161,6 +202,34 @@ void *llist_search(llist_t *list, bool (*eq_fun)(const void *, void *), void *cm
     return NULL;
 }
 
+llist_iter_t *llist_get_iter(llist_t *list)
+{
+    assert(list != NULL && "list is null");
+
+    return iter_new(list);
+}
+
+void *llist_iter_next(llist_iter_t *iter)
+{
+    assert(iter != NULL && "iterator is null");
+
+    if (iter->node != NULL)
+    {
+	void *data = iter->node->data;
+	iter->node = iter->node->next;
+	return data;
+    }
+
+    return NULL;
+}
+
+void llist_iter_free(llist_iter_t *iter)
+{
+    assert(iter != NULL && "iterator is null");
+
+    free(iter);
+}
+
 void llist_free(llist_t *list)
 {
     assert(list != NULL && "list is null");
@@ -224,4 +293,16 @@ static void *node_remove(node_t **node_ptr, void (*free_fun)(void *))
     free(n);
 
     return data;
+}
+
+static void *iter_new(llist_t *list)
+{
+    llist_iter_t *iter = malloc(sizeof *iter);
+
+    if (iter != NULL)
+    {
+	iter->node = list->first;
+    }
+
+    return iter;
 }
