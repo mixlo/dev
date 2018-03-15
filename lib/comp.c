@@ -1,9 +1,11 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <llist.h>
 #include <comp.h>
 
 struct comp {
-    // int time_sig; // only supports common time (4/4) initially
+    int time_sig_upper;
+    int time_sig_lower;
     int bpm;
     llist_t *chords;
 };
@@ -38,6 +40,10 @@ comp_t *comp_new(int bpm)
 
     new_comp->bpm = bpm;
     new_comp->chords = chords;
+
+    // Currently only support for time signature 4/4
+    new_comp->time_sig_upper = 4;
+    new_comp->time_sig_lower = 4;
     
     return new_comp;
 }
@@ -97,9 +103,10 @@ note_t *comp_get_chord_notes(chord_t *chord)
     return chord->notes;
 }
 
+// Todo: implement dotted notes by geometric series
 double comp_get_chord_duration(comp_t *comp, chord_t *chord)
 {
-    return comp->bpm / 60.0 / chord->dur_denom;
+    return 60.0 / (comp->bpm * chord->dur_denom) * comp->time_sig_lower;
 }
 
 llist_iter_t *comp_get_chords_iterator(comp_t *comp)

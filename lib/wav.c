@@ -58,6 +58,12 @@ static unsigned int get_byte_rate(wav_t *wav);
 static unsigned long get_amplitude(wav_t *wav);
 static float get_freq_rad(note_t note);
 static void write_delay(wav_t *wav, FILE *fp);
+static void add_chord_samples(
+    wav_t *wav,
+    unsigned long num_samples,
+    int chord_size,
+    float *radians_per_note,
+    double amplitude);
 
 /*
 static void write_test(wav_t *wav, FILE *fp);
@@ -109,13 +115,43 @@ wav_t *wav_new_comp(unsigned smpl_rate, unsigned short num_chnls, unsigned short
     return wav;
 }
 
+static void add_chord_samples(
+    wav_t *wav,
+    unsigned long num_samples,
+    int chord_size,
+    float *radians_per_note,
+    double amplitude)
+{
+    // Support for 32 bit samples
+    long current_sample;
+
+    for (int i = 0; i < num_samples; i++) {
+	// Sound waves for chords are the sum of the single note frequenzies
+	double sample_phase = 0;
+	for (int n = 0; n < chord_size; n++)
+	    sample_phase += sin(radians_per_note[n] * i);
+
+	// sin() returns within range [-1, 1], but the sum for all notes will
+	// be in range [-chord_size, chord_size], so amplitude us divided by
+	// chord_size to make sure sample size doesn't exceed bits per sample
+	current_sample = (amplitude / chord_size) * sample_phase;
+
+	// Currently, same sample in all channels
+	unsigned char *sample_frame = malloc(sizeof *sample_frame * wav->fmt->blk_align);
+	for (int c = 0; c < wav->fmt->num_chnls; c++)
+	    memcpy(sample_frame + wav->fmt->blk_align * c, &current_sample, wav->fmt->bps / 8);
+	    
+	llist_append(wav->data->samples, sample_frame);
+
+	// Simple tone decay. Todo: implement ADSR
+	amplitude *= 1 - 1 / amplitude;
+    }
+}
+
 static void add_samples_by_comp(wav_t *wav, comp_t *comp)
 {
     double samples_per_second = get_sample_rate(wav);
     double amp = get_amplitude(wav);
-
-    // Support for 32 bit samples
-    long current_sample;
 
     // Support for 10 notes per chord
     float radians_per_note[10];
@@ -126,31 +162,17 @@ static void add_samples_by_comp(wav_t *wav, comp_t *comp)
     while ((current_chord = llist_iter_next(chord_iter))) {
 	int chord_size = comp_get_chord_size(current_chord);
 	note_t *chord_notes = comp_get_chord_notes(current_chord);
-	
+
+	// Calculate radians per sample for each individual note
 	for (int n = 0; n < chord_size; n++)
 	    radians_per_note[n] = get_freq_rad(chord_notes[n]) / samples_per_second;
-	
+
+	// Calculate how many samples needed for this chord, depending on
+	// sample rate, bpm and chord duration
 	double chord_seconds = comp_get_chord_duration(comp, current_chord);
 	unsigned long num_samples = samples_per_second * chord_seconds;
 
-	for (int i = 0; i < num_samples; i++) {
-	    // Sound waves for chords are the sum of the single note frequenzies
-	    double sample_phase = 0;
-	    for (int j = 0; j < chord_size; j++)
-		sample_phase += sin(radians_per_note[j] * i);
-
-	    // sin() returns within range [-1, 1], but the sum for all notes will
-	    // be in range [-chord_size, chord_size], so amplitude us divided by
-	    // chord_size to make sure sample size doesn't exceed bits per sample
-	    current_sample = (amp / chord_size) * sample_phase;
-
-	    // Currently, same sample in all channels
-	    unsigned char *sample_frame = malloc(sizeof *sample_frame * wav->fmt->blk_align);
-	    for (int j = 0; j < wav->fmt->num_chnls; j++)
-		memcpy(sample_frame + wav->fmt->blk_align * j, &current_sample, wav->fmt->bps / 8);
-	    
-	    llist_append(wav->data->samples, sample_frame);
-	}
+	add_chord_samples(wav, num_samples, chord_size, radians_per_note, amp);
     }
 }
 

@@ -26,11 +26,17 @@ int main(int argc, char *argv[])
 
     comp_t *comp = comp_new(120);
     comp_add_chord_2(comp, C5, C4, 4);
+    comp_add_chord_2(comp, C5, C4, 4);
+    comp_add_chord_2(comp, G5, E4, 4);
     comp_add_chord_2(comp, G5, E4, 4);
     comp_add_chord_2(comp, A5, F4, 4);
-    comp_add_chord_2(comp, G5, E4, 4);
+    comp_add_chord_2(comp, A5, F4, 4);
+    comp_add_chord_2(comp, G5, E4, 2);
+    comp_add_chord_2(comp, F5, D4, 4);
     comp_add_chord_2(comp, F5, D4, 4);
     comp_add_chord_2(comp, E5, C4, 4);
+    comp_add_chord_2(comp, E5, C4, 4);
+    comp_add_chord_2(comp, D5, G4, 4);
     comp_add_chord_2(comp, D5, G4, 4);
     comp_add_chord_2(comp, C5, C4, 4);
 
