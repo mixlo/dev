@@ -45,10 +45,31 @@ static chunk_fmt_t *fmt_alloc(
     unsigned short blk_align,
     unsigned short bps);
 static chunk_data_t *data_alloc(llist_t *samples);
+
+static double get_quad_func_a(
+    double vx,
+    double vy,
+    double px,
+    double py);
+static void add_chord_sample(
+    wav_t *wav,
+    int chord_size,
+    float *radians_per_note,
+    unsigned long sine_wave_idx,
+    double amplitude);
+static void add_chord_samples_adsr(
+    wav_t *wav,
+    unsigned long num_samples,
+    int chord_size,
+    float *radians_per_note,
+    double amplitude);
 static void add_samples_by_comp(wav_t *wav, comp_t *comp);
+
 static wav_t *read_desc_chunk(FILE *fp);
 static chunk_fmt_t *read_fmt_chunk(FILE *fp);
 static chunk_data_t *read_data_chunk(FILE *fp, unsigned short sample_size);
+static void write_delay(wav_t *wav, FILE *fp);
+
 static unsigned int get_fmt_size(wav_t *wav);
 static unsigned int get_data_size(wav_t *wav);
 static unsigned int get_num_samples(wav_t *wav);
@@ -57,19 +78,6 @@ static unsigned int get_sample_rate(wav_t *wav);
 static unsigned int get_byte_rate(wav_t *wav);
 static unsigned long get_amplitude(wav_t *wav);
 static float get_freq_rad(note_t note);
-static void write_delay(wav_t *wav, FILE *fp);
-static void add_chord_samples(
-    wav_t *wav,
-    unsigned long num_samples,
-    int chord_size,
-    float *radians_per_note,
-    double amplitude);
-
-/*
-static void write_test(wav_t *wav, FILE *fp);
-static void write_scale(wav_t *wav, FILE *fp);
-static void write_chord(wav_t *wav, FILE *fp);
-*/
 
 
 /* ##########   PUBLIC   ########## */
@@ -113,67 +121,6 @@ wav_t *wav_new_comp(unsigned smpl_rate, unsigned short num_chnls, unsigned short
     wav_t *wav = wav_new(smpl_rate, num_chnls, bps);
     add_samples_by_comp(wav, comp);
     return wav;
-}
-
-static void add_chord_samples(
-    wav_t *wav,
-    unsigned long num_samples,
-    int chord_size,
-    float *radians_per_note,
-    double amplitude)
-{
-    // Support for 32 bit samples
-    long current_sample;
-
-    for (int i = 0; i < num_samples; i++) {
-	// Sound waves for chords are the sum of the single note frequenzies
-	double sample_phase = 0;
-	for (int n = 0; n < chord_size; n++)
-	    sample_phase += sin(radians_per_note[n] * i);
-
-	// sin() returns within range [-1, 1], but the sum for all notes will
-	// be in range [-chord_size, chord_size], so amplitude us divided by
-	// chord_size to make sure sample size doesn't exceed bits per sample
-	current_sample = (amplitude / chord_size) * sample_phase;
-
-	// Currently, same sample in all channels
-	unsigned char *sample_frame = malloc(sizeof *sample_frame * wav->fmt->blk_align);
-	for (int c = 0; c < wav->fmt->num_chnls; c++)
-	    memcpy(sample_frame + wav->fmt->blk_align * c, &current_sample, wav->fmt->bps / 8);
-	    
-	llist_append(wav->data->samples, sample_frame);
-
-	// Simple tone decay. Todo: implement ADSR
-	amplitude *= 1 - 1 / amplitude;
-    }
-}
-
-static void add_samples_by_comp(wav_t *wav, comp_t *comp)
-{
-    double samples_per_second = get_sample_rate(wav);
-    double amp = get_amplitude(wav);
-
-    // Support for 10 notes per chord
-    float radians_per_note[10];
-
-    llist_iter_t *chord_iter = comp_get_chords_iterator(comp);
-    chord_t *current_chord = NULL;
-    
-    while ((current_chord = llist_iter_next(chord_iter))) {
-	int chord_size = comp_get_chord_size(current_chord);
-	note_t *chord_notes = comp_get_chord_notes(current_chord);
-
-	// Calculate radians per sample for each individual note
-	for (int n = 0; n < chord_size; n++)
-	    radians_per_note[n] = get_freq_rad(chord_notes[n]) / samples_per_second;
-
-	// Calculate how many samples needed for this chord, depending on
-	// sample rate, bpm and chord duration
-	double chord_seconds = comp_get_chord_duration(comp, current_chord);
-	unsigned long num_samples = samples_per_second * chord_seconds;
-
-	add_chord_samples(wav, num_samples, chord_size, radians_per_note, amp);
-    }
 }
 
 wav_t *wav_from_file(char *filename)
@@ -277,12 +224,6 @@ void wav_to_file(wav_t *wav, char *filename)
     while ((current_sample = llist_iter_next(sample_iter)))
 	fwrite(current_sample, wav->fmt->blk_align, 1, fp);
     
-    // This call seems to crash sometimes depending on delay, e.g. 5000
-    //fwrite(wav->data->data, wav->data->size, 1, fp);
-    //write_test(wav, fp);
-    //write_scale(wav, fp);
-    //write_chord(wav, fp);
-
     fclose(fp);
 }
 
@@ -364,6 +305,205 @@ static chunk_data_t *data_alloc(llist_t *samples)
     return chunk;
 }
 
+// Get the a-value of a quadratic function, by its vertex coordinates
+// and the coordinates of an arbitrary point on the curve
+static double get_quad_func_a(
+    double vx,
+    double vy,
+    double px,
+    double py)
+{
+    double x_diff = px - vx;
+    double y_diff = py - vy;
+    return y_diff / (x_diff * x_diff);
+}
+
+static void add_chord_sample(
+    wav_t *wav,
+    int chord_size,
+    float *radians_per_note,
+    unsigned long sine_wave_idx,
+    double amplitude)
+{
+    // Support for 32 bit samples
+    long current_sample;
+
+    // Sound waves for chords are the sum of the single note frequenzies
+    double sample_phase = 0;
+    for (int n = 0; n < chord_size; n++)
+	sample_phase += sin(radians_per_note[n] * sine_wave_idx);
+
+    // sin() returns within range [-1, 1], but the sum for all notes will
+    // be in range [-chord_size, chord_size], so amplitude us divided by
+    // chord_size to make sure sample size doesn't exceed bits per sample
+    current_sample = (amplitude / chord_size) * sample_phase;
+
+    // Currently, same sample in all channels
+    unsigned char *sample_frame = malloc(sizeof *sample_frame * wav->fmt->blk_align);
+    for (int c = 0; c < wav->fmt->num_chnls; c++)
+	memcpy(sample_frame + wav->fmt->blk_align * c, &current_sample, wav->fmt->bps / 8);
+	    
+    llist_append(wav->data->samples, sample_frame);
+}
+
+static void add_chord_samples_adsr(
+    wav_t *wav,
+    unsigned long num_samples,
+    int chord_size,
+    float *radians_per_note,
+    double amplitude)
+{
+    // Get the x-coordinate of the vertex of the quadratic function of each part of ADSR
+    unsigned long attack_start_vx  = 0;
+    unsigned long attack_end_vx    = num_samples * 0.10; // 10% attack
+    unsigned long decay_start_vx   = attack_end_vx;
+    unsigned long decay_end_vx     = num_samples * 0.20; // 10% decay
+    unsigned long sustain_start_vx = decay_end_vx;
+    unsigned long sustain_end_vx   = num_samples * 0.90; // 70% sustain
+    unsigned long release_start_vx = sustain_end_vx;
+    unsigned long release_end_vx   = num_samples;        // 10% release
+
+    // Get the y-coordinate of the vertex of the quadratic function of each part of ADSR
+    unsigned long attack_start_vy  = 0;
+    unsigned long attack_end_vy    = amplitude;        // attack peaks volume to 100%
+    unsigned long decay_start_vy   = attack_end_vy;
+    unsigned long decay_end_vy     = amplitude * 0.70; // decay lowers by 30%
+    unsigned long sustain_start_vy = decay_end_vy;
+    unsigned long sustain_end_vy   = sustain_start_vy; // constant sustain
+    unsigned long release_start_vy = sustain_end_vy;
+    unsigned long release_end_vy   = 0;                // release lowers volume to 0
+
+    // Get the x-coordinate of the point halfway through the curve of each part of ADSR
+    unsigned long attack_half_px  = (attack_start_vx + attack_end_vx) / 2;
+    unsigned long decay_half_px   = (decay_start_vx + decay_end_vx) / 2;
+    unsigned long sustain_half_px = (sustain_start_vx + sustain_end_vx) / 2;
+    unsigned long release_half_px = (release_start_vx + release_end_vx) / 2;
+
+    // Get the y-coordinate of the point halfway through the curve of each part of ADSR
+    unsigned long attack_half_py  = (attack_start_vy + attack_end_vy) / 2;
+    unsigned long decay_half_py   = (decay_start_vy + decay_end_vy) / 2;
+    unsigned long sustain_half_py = (sustain_start_vy + sustain_end_vy) / 2;
+    unsigned long release_half_py = (release_start_vy + release_end_vy) / 2;
+
+    // Get the absolute a-values of each the ADSR curves
+    double attack_a = fabs(get_quad_func_a(
+	attack_start_vx,
+	attack_start_vy,
+	attack_half_px,
+	attack_half_py));
+    double decay_a = fabs(get_quad_func_a(
+	decay_start_vx,
+	decay_start_vy,
+	decay_half_px,
+	decay_half_py));
+    double sustain_a = fabs(get_quad_func_a(
+	sustain_start_vx,
+	sustain_start_vy,
+	sustain_half_px,
+	sustain_half_py));
+    double release_a = fabs(get_quad_func_a(
+	release_start_vx,
+	release_start_vy,
+	release_half_px,
+	release_half_py));
+
+    double current_amp = attack_start_vy;
+    long x_diff;
+    unsigned long x;
+
+    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
+    //   attack_a, attack_start_vx, attack_start_vy, attack_start_vx, attack_half_px);
+    for (x = attack_start_vx; x < attack_half_px; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - attack_start_vx;
+	current_amp = attack_a * x_diff * x_diff + attack_start_vy;
+    }
+    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
+    //   -attack_a, attack_end_vx, attack_end_vy, attack_half_px, attack_end_vx);
+    for (x = attack_half_px; x < attack_end_vx; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - attack_end_vx;
+	current_amp = (-attack_a) * x_diff * x_diff + attack_end_vy;
+    }
+
+    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
+    //   -decay_a, decay_start_vx, decay_start_vy, decay_start_vx, decay_half_px);
+    for (x = decay_start_vx; x < decay_half_px; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - decay_start_vx;
+	current_amp = -decay_a * x_diff * x_diff + decay_start_vy;
+    }
+    
+    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
+    //   decay_a, decay_end_vx, decay_end_vy, decay_half_px, decay_end_vx);
+    for (x = decay_half_px; x < decay_end_vx; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - decay_end_vx;
+	current_amp = decay_a * x_diff * x_diff + decay_end_vy;
+    }
+
+    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
+    //   -sustain_a, sustain_start_vx, sustain_start_vy, sustain_start_vx, sustain_half_px);
+    for (x = sustain_start_vx; x < sustain_half_px; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - sustain_start_vx;
+	current_amp = -sustain_a * x_diff * x_diff + sustain_start_vy;
+    }
+
+    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
+    //   sustain_a, sustain_end_vx, sustain_end_vy, sustain_half_px, sustain_end_vx);    
+    for (x = sustain_half_px; x < sustain_end_vx; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - sustain_end_vx;
+	current_amp = sustain_a * x_diff * x_diff + sustain_end_vy;
+    }
+
+    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
+    //   -release_a, release_start_vx, release_start_vy, release_start_vx, release_half_px);
+    for (x = release_start_vx; x < release_half_px; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - release_start_vx;
+	current_amp = -release_a * x_diff * x_diff + release_start_vy;
+    }
+
+    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
+    //   release_a, release_end_vx, release_end_vy, release_half_px, release_end_vx);
+    for (x = release_half_px; x < release_end_vx; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - release_end_vx;
+	current_amp = release_a * x_diff * x_diff + release_end_vy;
+    }
+}
+
+static void add_samples_by_comp(wav_t *wav, comp_t *comp)
+{
+    double samples_per_second = get_sample_rate(wav);
+    double amplitude = get_amplitude(wav);
+
+    // Support for 10 notes per chord
+    float radians_per_note[10];
+
+    llist_iter_t *chord_iter = comp_get_chords_iterator(comp);
+    chord_t *current_chord = NULL;
+    
+    while ((current_chord = llist_iter_next(chord_iter))) {
+	int chord_size = comp_get_chord_size(current_chord);
+	note_t *chord_notes = comp_get_chord_notes(current_chord);
+
+	// Calculate radians per sample for each individual note
+	for (int n = 0; n < chord_size; n++)
+	    radians_per_note[n] = get_freq_rad(chord_notes[n]) / samples_per_second;
+
+	// Calculate how many samples needed for this chord, depending on
+	// sample rate, bpm and chord duration
+	double chord_seconds = comp_get_chord_duration(comp, current_chord);
+	unsigned long num_samples = samples_per_second * chord_seconds;
+
+	//add_chord_samples_adsr(wav, num_samples, chord_size, radians_per_note, amplitude);
+	add_chord_samples_adsr(wav, num_samples, chord_size, radians_per_note, amplitude);
+    }
+}
+
 static wav_t *read_desc_chunk(FILE *fp)
 {
     char buffer[5];
@@ -433,6 +573,17 @@ static chunk_data_t *read_data_chunk(FILE *fp, unsigned short sample_size)
     return data_alloc(samples);
 }
 
+static void write_delay(wav_t *wav, FILE *fp)
+{
+    unsigned int num_delay_samples = get_num_delay_samples(wav);
+    void *null_sample = calloc(1, wav->fmt->blk_align);
+
+    for (int i = 0; i < num_delay_samples; i++)
+	fwrite(null_sample, wav->fmt->blk_align, 1, fp);
+
+    free(null_sample);
+}
+
 static unsigned int get_num_samples(wav_t *wav)
 {
     return llist_length(wav->data->samples);
@@ -468,27 +619,19 @@ static unsigned long get_amplitude(wav_t *wav)
     return pow(2, wav->fmt->bps - 1) - 1;
 }
 
-static void write_delay(wav_t *wav, FILE *fp)
-{
-    unsigned int num_delay_samples = get_num_delay_samples(wav);
-    void *null_sample = calloc(1, wav->fmt->blk_align);
-
-    for (int i = 0; i < num_delay_samples; i++)
-	fwrite(null_sample, wav->fmt->blk_align, 1, fp);
-
-    free(null_sample);
-}
-
 static float FRQ_RAD[] = {
-    130.81 * 2 * PI, 138.59 * 2 * PI, 146.83 * 2 * PI, 155.56 * 2 * PI,
-    164.81 * 2 * PI, 174.61 * 2 * PI, 185.00 * 2 * PI, 196.00 * 2 * PI,
-    207.65 * 2 * PI, 220.00 * 2 * PI, 233.08 * 2 * PI, 246.94 * 2 * PI,
-    261.63 * 2 * PI, 277.18 * 2 * PI, 293.66 * 2 * PI, 311.13 * 2 * PI,
-    329.63 * 2 * PI, 349.23 * 2 * PI, 369.99 * 2 * PI, 392.00 * 2 * PI,
-    415.30 * 2 * PI, 440.00 * 2 * PI, 466.16 * 2 * PI, 493.88 * 2 * PI,
-    523.25 * 2 * PI, 554.37 * 2 * PI, 587.33 * 2 * PI, 622.25 * 2 * PI,
-    659.25 * 2 * PI, 698.46 * 2 * PI, 739.99 * 2 * PI, 783.99 * 2 * PI,
-    830.61 * 2 * PI, 880.00 * 2 * PI, 932.33 * 2 * PI, 987.77 * 2 * PI
+     130.81 * 2 * PI,  138.59 * 2 * PI,  146.83 * 2 * PI,  155.56 * 2 * PI,
+     164.81 * 2 * PI,  174.61 * 2 * PI,  185.00 * 2 * PI,  196.00 * 2 * PI,
+     207.65 * 2 * PI,  220.00 * 2 * PI,  233.08 * 2 * PI,  246.94 * 2 * PI,
+     261.63 * 2 * PI,  277.18 * 2 * PI,  293.66 * 2 * PI,  311.13 * 2 * PI,
+     329.63 * 2 * PI,  349.23 * 2 * PI,  369.99 * 2 * PI,  392.00 * 2 * PI,
+     415.30 * 2 * PI,  440.00 * 2 * PI,  466.16 * 2 * PI,  493.88 * 2 * PI,
+     523.25 * 2 * PI,  554.37 * 2 * PI,  587.33 * 2 * PI,  622.25 * 2 * PI,
+     659.25 * 2 * PI,  698.46 * 2 * PI,  739.99 * 2 * PI,  783.99 * 2 * PI,
+     830.61 * 2 * PI,  880.00 * 2 * PI,  932.33 * 2 * PI,  987.77 * 2 * PI,
+    1046.50 * 2 * PI, 1108.73 * 2 * PI, 1174.66 * 2 * PI, 1244.51 * 2 * PI,
+    1318.51 * 2 * PI, 1396.91 * 2 * PI, 1479.98 * 2 * PI, 1567.98 * 2 * PI,
+    1661.22 * 2 * PI, 1760.00 * 2 * PI, 1864.66 * 2 * PI, 1975.73 * 2 * PI
 };
 
 static float get_freq_rad(note_t note)
@@ -530,6 +673,18 @@ static float get_freq_rad(note_t note)
     case A5 : return FRQ_RAD[33];
     case AS5: return FRQ_RAD[34];
     case B5 : return FRQ_RAD[35];
+    case C6 : return FRQ_RAD[36];
+    case CS6: return FRQ_RAD[37];
+    case D6 : return FRQ_RAD[38];
+    case DS6: return FRQ_RAD[39];
+    case E6 : return FRQ_RAD[40];
+    case F6 : return FRQ_RAD[41];
+    case FS6: return FRQ_RAD[42];
+    case G6 : return FRQ_RAD[43];
+    case GS6: return FRQ_RAD[44];
+    case A6 : return FRQ_RAD[45];
+    case AS6: return FRQ_RAD[46];
+    case B6 : return FRQ_RAD[47];
     default:  return 0.00;
     }
 }

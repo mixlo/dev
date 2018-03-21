@@ -2,6 +2,101 @@
 #include <comp.h>
 #include <wav.h>
 
+void add_twinkle(comp_t *comp)
+{
+    comp_add_chord_2(comp, C5, C4, 4);
+    comp_add_chord_2(comp, C5, C4, 4);
+    comp_add_chord_2(comp, G5, E4, 4);
+    comp_add_chord_2(comp, G5, E4, 4);
+    comp_add_chord_2(comp, A5, F4, 4);
+    comp_add_chord_2(comp, A5, F4, 4);
+    comp_add_chord_2(comp, G5, E4, 2);
+    comp_add_chord_2(comp, F5, D4, 4);
+    comp_add_chord_2(comp, F5, D4, 4);
+    comp_add_chord_2(comp, E5, C4, 4);
+    comp_add_chord_2(comp, E5, C4, 4);
+    comp_add_chord_2(comp, D5, G4, 4);
+    comp_add_chord_2(comp, D5, G4, 4);
+    comp_add_chord_2(comp, C5, C4, 2);
+}
+
+void add_something(comp_t *comp)
+{
+    comp_add_chord_2(comp, G5, C4, 4);
+    comp_add_chord_2(comp, C5, C4, 8);
+    comp_add_chord_2(comp, D5, C4, 8);
+    comp_add_chord_2(comp, E5, C4, 8);
+    comp_add_chord_2(comp, F5, C4, 8);
+    comp_add_chord_2(comp, G5, C4, 4);
+    comp_add_chord_2(comp, C5, C4, 4);
+    comp_add_chord_2(comp, C5, E4, 4);
+
+    comp_add_chord_2(comp, A5, F4, 4);
+    comp_add_chord_2(comp, F5, F4, 8);
+    comp_add_chord_2(comp, G5, F4, 8);
+    comp_add_chord_2(comp, A5, F4, 8);
+    comp_add_chord_2(comp, B5, F4, 8);
+    comp_add_chord_2(comp, C6, C4, 4);
+    comp_add_chord_2(comp, C5, C4, 4);
+    comp_add_chord_2(comp, C5, E4, 4);
+
+    comp_add_chord_2(comp, F5, F4, 4);
+    comp_add_chord_2(comp, G5, F4, 8);
+    comp_add_chord_2(comp, F5, F4, 8);
+    comp_add_chord_2(comp, E5, F4, 8);
+    comp_add_chord_2(comp, D5, F4, 8);
+    comp_add_chord_2(comp, E5, C4, 4);
+    comp_add_chord_2(comp, F5, C4, 8);
+    comp_add_chord_2(comp, E5, C4, 8);
+    comp_add_chord_2(comp, D5, C4, 8);
+    comp_add_chord_2(comp, C5, C4, 8);
+    comp_add_chord_2(comp, B4, G3, 4);
+    comp_add_chord_2(comp, C5, G3, 8);
+    comp_add_chord_2(comp, D5, G3, 8);
+    comp_add_chord_2(comp, E5, G3, 8);
+    comp_add_chord_2(comp, C5, G3, 8);
+    comp_add_chord_2(comp, D5, G3, 4);
+    comp_add_chord_1(comp, G3, 4);
+    comp_add_chord_1(comp, B3, 4);
+
+    comp_add_chord_2(comp, G5, C4, 4);
+    comp_add_chord_2(comp, C5, C4, 8);
+    comp_add_chord_2(comp, D5, C4, 8);
+    comp_add_chord_2(comp, E5, C4, 8);
+    comp_add_chord_2(comp, F5, C4, 8);
+    comp_add_chord_2(comp, G5, C4, 4);
+    comp_add_chord_2(comp, C5, C4, 4);
+    comp_add_chord_2(comp, C5, E4, 4);
+
+    comp_add_chord_2(comp, A5, F4, 4);
+    comp_add_chord_2(comp, F5, F4, 8);
+    comp_add_chord_2(comp, G5, F4, 8);
+    comp_add_chord_2(comp, A5, F4, 8);
+    comp_add_chord_2(comp, B5, F4, 8);
+    comp_add_chord_2(comp, C6, C4, 4);
+    comp_add_chord_2(comp, C5, C4, 4);
+    comp_add_chord_2(comp, C5, E4, 4);
+
+    comp_add_chord_2(comp, F5, F4, 4);
+    comp_add_chord_2(comp, G5, F4, 8);
+    comp_add_chord_2(comp, F5, F4, 8);
+    comp_add_chord_2(comp, E5, F4, 8);
+    comp_add_chord_2(comp, D5, F4, 8);
+    comp_add_chord_2(comp, E5, C4, 4);
+    comp_add_chord_2(comp, F5, C4, 8);
+    comp_add_chord_2(comp, E5, C4, 8);
+    comp_add_chord_2(comp, D5, C4, 8);
+    comp_add_chord_2(comp, C5, C4, 8);
+    comp_add_chord_2(comp, D5, G3, 4);
+    comp_add_chord_2(comp, E5, G3, 8);
+    comp_add_chord_2(comp, D5, G3, 8);
+    comp_add_chord_2(comp, C5, G3, 8);
+    comp_add_chord_2(comp, B4, G3, 8);
+    comp_add_chord_2(comp, C5, C4, 2);
+}
+
+
+
 int main(int argc, char *argv[])
 {
     /*
@@ -24,22 +119,10 @@ int main(int argc, char *argv[])
     wav_free(wav);
     */
 
-    comp_t *comp = comp_new(120);
-    comp_add_chord_2(comp, C5, C4, 4);
-    comp_add_chord_2(comp, C5, C4, 4);
-    comp_add_chord_2(comp, G5, E4, 4);
-    comp_add_chord_2(comp, G5, E4, 4);
-    comp_add_chord_2(comp, A5, F4, 4);
-    comp_add_chord_2(comp, A5, F4, 4);
-    comp_add_chord_2(comp, G5, E4, 2);
-    comp_add_chord_2(comp, F5, D4, 4);
-    comp_add_chord_2(comp, F5, D4, 4);
-    comp_add_chord_2(comp, E5, C4, 4);
-    comp_add_chord_2(comp, E5, C4, 4);
-    comp_add_chord_2(comp, D5, G4, 4);
-    comp_add_chord_2(comp, D5, G4, 4);
-    comp_add_chord_2(comp, C5, C4, 4);
-
+    comp_t *comp = comp_new(160);
+    //add_twinkle(comp);
+    add_something(comp);
+    //comp_add_chord_2(comp, C5, E4, 1);
     wav_t *wav = wav_new_comp(44100, 1, 16, comp);
     wav_print_info(wav);
     wav_to_file(wav, "./test_write_2.wav");
