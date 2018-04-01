@@ -305,8 +305,12 @@ static chunk_data_t *data_alloc(llist_t *samples)
     return chunk;
 }
 
-// Get the a-value of a quadratic function, by its vertex coordinates
-// and the coordinates of an arbitrary point on the curve
+// Get the leading coefficient (a-value) of a quadratic function, by its
+// vertex coordinates and the coordinates of an arbitrary point on the curve.
+// By quadratic function vertex form:
+//  y = a * (x - h)^2 + k
+// py = a * (px - vx) + vy
+//  a = (py - vy) / (px - vx)^2
 static double get_quad_func_a(
     double vx,
     double vy,
@@ -346,6 +350,16 @@ static void add_chord_sample(
     llist_append(wav->data->samples, sample_frame);
 }
 
+// Use quadratic functions to generate the amplitude between each sample.
+// Making sure that the amplitude change factor reaches 0 between phases of ADSR
+// generates a continuous curve, to smoothen the transitions between each phase.
+// This avoids the "popping" sound appearing for the transition between each phase
+// when applying linear change in amplitude.
+// The amplitude curve of each phase is represented by two quadratic functions
+// with the same leading coeffeicient, although negated, meeting each other half
+// way through the x-range of the phase.
+// Simply put, one function is used to represent the entire phase curve, but
+// it's "flipped" in the middle.
 static void add_chord_samples_adsr(
     wav_t *wav,
     unsigned long num_samples,
@@ -385,7 +399,7 @@ static void add_chord_samples_adsr(
     unsigned long sustain_half_py = (sustain_start_vy + sustain_end_vy) / 2;
     unsigned long release_half_py = (release_start_vy + release_end_vy) / 2;
 
-    // Get the absolute a-values of each the ADSR curves
+    // Get the absolute value of the leading coefficient of each ADSR curve
     double attack_a = fabs(get_quad_func_a(
 	attack_start_vx,
 	attack_start_vy,
@@ -407,67 +421,57 @@ static void add_chord_samples_adsr(
 	release_half_px,
 	release_half_py));
 
+    // Add samples for both halves of each phase of ADSR
     double current_amp = attack_start_vy;
     long x_diff;
     unsigned long x;
 
-    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
-    //   attack_a, attack_start_vx, attack_start_vy, attack_start_vx, attack_half_px);
+    // Attack
     for (x = attack_start_vx; x < attack_half_px; x++) {
 	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
 	x_diff = x - attack_start_vx;
 	current_amp = attack_a * x_diff * x_diff + attack_start_vy;
     }
-    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
-    //   -attack_a, attack_end_vx, attack_end_vy, attack_half_px, attack_end_vx);
+
     for (x = attack_half_px; x < attack_end_vx; x++) {
 	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
 	x_diff = x - attack_end_vx;
-	current_amp = (-attack_a) * x_diff * x_diff + attack_end_vy;
+	current_amp = -attack_a * x_diff * x_diff + attack_end_vy;
     }
 
-    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
-    //   -decay_a, decay_start_vx, decay_start_vy, decay_start_vx, decay_half_px);
+    // Decay
     for (x = decay_start_vx; x < decay_half_px; x++) {
 	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
 	x_diff = x - decay_start_vx;
 	current_amp = -decay_a * x_diff * x_diff + decay_start_vy;
     }
     
-    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
-    //   decay_a, decay_end_vx, decay_end_vy, decay_half_px, decay_end_vx);
     for (x = decay_half_px; x < decay_end_vx; x++) {
 	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
 	x_diff = x - decay_end_vx;
 	current_amp = decay_a * x_diff * x_diff + decay_end_vy;
     }
 
-    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
-    //   -sustain_a, sustain_start_vx, sustain_start_vy, sustain_start_vx, sustain_half_px);
+    // Sustain
     for (x = sustain_start_vx; x < sustain_half_px; x++) {
 	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
 	x_diff = x - sustain_start_vx;
 	current_amp = -sustain_a * x_diff * x_diff + sustain_start_vy;
     }
 
-    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
-    //   sustain_a, sustain_end_vx, sustain_end_vy, sustain_half_px, sustain_end_vx);    
     for (x = sustain_half_px; x < sustain_end_vx; x++) {
 	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
 	x_diff = x - sustain_end_vx;
 	current_amp = sustain_a * x_diff * x_diff + sustain_end_vy;
     }
 
-    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
-    //   -release_a, release_start_vx, release_start_vy, release_start_vx, release_half_px);
+    // Release
     for (x = release_start_vx; x < release_half_px; x++) {
 	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
 	x_diff = x - release_start_vx;
 	current_amp = -release_a * x_diff * x_diff + release_start_vy;
     }
 
-    //printf(" a: %f\n vx: %lu\n vy: %lu\n x_start: %lu\n x_end: %lu\n\n",
-    //   release_a, release_end_vx, release_end_vy, release_half_px, release_end_vx);
     for (x = release_half_px; x < release_end_vx; x++) {
 	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
 	x_diff = x - release_end_vx;

@@ -95,7 +95,37 @@ void add_something(comp_t *comp)
     comp_add_chord_2(comp, C5, C4, 2);
 }
 
+void add_all_star(comp_t *comp)
+{
+    comp_add_chord_2(comp,  F5,  F4, 4);
+    comp_add_chord_2(comp,  C6,  F4, 8);
+    comp_add_chord_2(comp,  A5,  A4, 8);
+    comp_add_chord_2(comp,  A5,  C5, 4);
+    comp_add_chord_2(comp,  G5,  G4, 8);
+    comp_add_chord_2(comp,  F5,  A4, 8);
+    comp_add_chord_2(comp,  F5,  F4, 8);
+    comp_add_chord_2(comp, AS5,  G4, 4);
+    comp_add_chord_2(comp,  A5,  A4, 8);
+    comp_add_chord_2(comp,  A5,  A4, 8);
+    comp_add_chord_2(comp,  G5, AS4, 8);
+    comp_add_chord_2(comp,  G5, AS4, 8);
+    comp_add_chord_2(comp,  F5,  D5, 8);
+    comp_add_chord_2(comp,  F5,  D5, 8);
+    comp_add_chord_2(comp,  C6,  A4, 4);
+}
 
+void add_tetris(comp_t *comp)
+{
+    comp_add_chord_3(comp,  E6, GS5,  E4, 8);
+    comp_add_chord_3(comp,  E6, GS5, GS4, 8);
+    comp_add_chord_3(comp,  B5, GS5,  B3, 8);
+    comp_add_chord_3(comp,  C6,  A5, GS4, 8);
+    comp_add_chord_3(comp,  B5,  D6,  E4, 8);
+    comp_add_chord_3(comp,  B5,  D6, GS4, 8);
+    comp_add_chord_3(comp,  C6,  A5,  B3, 8);
+    comp_add_chord_3(comp,  B5, GS5, GS4, 8);
+    comp_add_chord_3(comp,  A5,  E5,  E4, 4);
+}
 
 int main(int argc, char *argv[])
 {
@@ -119,13 +149,24 @@ int main(int argc, char *argv[])
     wav_free(wav);
     */
 
-    comp_t *comp = comp_new(160);
-    //add_twinkle(comp);
-    add_something(comp);
+    //comp_t *comp = comp_new(60);
     //comp_add_chord_2(comp, C5, E4, 1);
+    
+    //comp_t *comp = comp_new(160);
+    //add_twinkle(comp);
+
+    //comp_t *comp = comp_new(160);
+    //add_something(comp);
+
+    //comp_t *comp = comp_new(120);
+    //add_all_star(comp);
+
+    comp_t *comp = comp_new(120);
+    add_tetris(comp);
+
     wav_t *wav = wav_new_comp(44100, 1, 16, comp);
     wav_print_info(wav);
-    wav_to_file(wav, "./test_write_2.wav");
+    wav_to_file(wav, "./tetris.wav");
     
     wav_free(wav);
     comp_free(comp);
