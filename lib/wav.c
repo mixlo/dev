@@ -11,6 +11,7 @@
 
 typedef struct chunk_fmt chunk_fmt_t;
 typedef struct chunk_data chunk_data_t;
+typedef struct adsr_env adsr_env_t;
 
 struct wav
 {
@@ -34,6 +35,53 @@ struct chunk_data
     llist_t *samples;
 };
 
+struct adsr_env
+{
+    int chord_size;
+    float radians_per_note[10];
+
+    // y and x values for position on ADSR curve
+    double amp_level;
+    unsigned long x;
+
+    unsigned long num_samples;
+    
+    unsigned long attack_start_vx; 
+    unsigned long attack_end_vx;
+    unsigned long decay_start_vx;
+    unsigned long decay_end_vx;
+    unsigned long sustain_start_vx;
+    unsigned long sustain_end_vx;
+    unsigned long release_start_vx;
+    unsigned long release_end_vx;
+
+    double attack_start_vy;
+    double attack_end_vy;
+    double decay_start_vy;
+    double decay_end_vy;
+    double sustain_start_vy;
+    double sustain_end_vy;
+    double release_start_vy;
+    double release_end_vy;
+
+    unsigned long attack_half_px;
+    unsigned long decay_half_px;
+    unsigned long sustain_half_px;
+    unsigned long release_half_px;
+
+    double attack_half_py;
+    double decay_half_py;
+    double sustain_half_py;
+    double release_half_py;
+
+    double attack_a;
+    double decay_a;
+    double sustain_a;
+    double release_a;
+
+    bool done;
+};
+
 
 /* ##########   PRIVATE DECLARATIONS   ########## */
 
@@ -51,18 +99,12 @@ static double get_quad_func_a(
     double vy,
     double px,
     double py);
-static void add_chord_sample(
-    wav_t *wav,
-    int chord_size,
-    float *radians_per_note,
-    unsigned long sine_wave_idx,
-    double amplitude);
-static void add_chord_samples_adsr(
-    wav_t *wav,
-    unsigned long num_samples,
-    int chord_size,
-    float *radians_per_note,
-    double amplitude);
+static adsr_env_t *init_adsr_env(
+    comp_t *comp,
+    chord_t *chord,
+    double samples_per_second);
+
+static double get_next_sample(adsr_env_t *env);
 static void add_samples_by_comp(wav_t *wav, comp_t *comp);
 
 static wav_t *read_desc_chunk(FILE *fp);
@@ -223,7 +265,8 @@ void wav_to_file(wav_t *wav, char *filename)
     
     while ((current_sample = llist_iter_next(sample_iter)))
 	fwrite(current_sample, wav->fmt->blk_align, 1, fp);
-    
+
+    llist_iter_free(sample_iter);
     fclose(fp);
 }
 
@@ -322,161 +365,151 @@ static double get_quad_func_a(
     return y_diff / (x_diff * x_diff);
 }
 
-static void add_chord_sample(
-    wav_t *wav,
-    int chord_size,
-    float *radians_per_note,
-    unsigned long sine_wave_idx,
-    double amplitude)
-{
-    // Support for 32 bit samples
-    long current_sample;
-
-    // Sound waves for chords are the sum of the single note frequenzies
-    double sample_phase = 0;
-    for (int n = 0; n < chord_size; n++)
-	sample_phase += sin(radians_per_note[n] * sine_wave_idx);
-
-    // sin() returns within range [-1, 1], but the sum for all notes will
-    // be in range [-chord_size, chord_size], so amplitude us divided by
-    // chord_size to make sure sample size doesn't exceed bits per sample
-    current_sample = (amplitude / chord_size) * sample_phase;
-
-    // Currently, same sample in all channels
-    unsigned char *sample_frame = malloc(sizeof *sample_frame * wav->fmt->blk_align);
-    for (int c = 0; c < wav->fmt->num_chnls; c++)
-	memcpy(sample_frame + wav->fmt->blk_align * c, &current_sample, wav->fmt->bps / 8);
-	    
-    llist_append(wav->data->samples, sample_frame);
-}
-
-// Use quadratic functions to generate the amplitude between each sample.
-// Making sure that the amplitude change factor reaches 0 between phases of ADSR
-// generates a continuous curve, to smoothen the transitions between each phase.
-// This avoids the "popping" sound appearing for the transition between each phase
-// when applying linear change in amplitude.
-// The amplitude curve of each phase is represented by two quadratic functions
-// with the same leading coeffeicient, although negated, meeting each other half
-// way through the x-range of the phase.
+// Use quadratic functions to generate the amplitude level within range [0,1]
+// between each sample. Making sure that the amplitude change factor reaches 0
+// between phases of ADSR generates a continuous curve, to smoothen the
+// transitions between each phase. This avoids the "popping" sound appearing
+// for the transition between each phase when applying linear change in
+// amplitude. The amplitude curve of each phase is represented by two quadratic
+// functions with the same leading coeffeicient, although negated, meeting each
+// other half way through the x-range of the phase.
 // Simply put, one function is used to represent the entire phase curve, but
 // it's "flipped" in the middle.
-static void add_chord_samples_adsr(
-    wav_t *wav,
-    unsigned long num_samples,
-    int chord_size,
-    float *radians_per_note,
-    double amplitude)
+static adsr_env_t *init_adsr_env(
+    comp_t *comp,
+    chord_t *chord,
+    double samples_per_second)
 {
+    if (chord == NULL)
+	return NULL;
+    
+    adsr_env_t *env = malloc(sizeof *env);
+
+    env->chord_size = comp_get_chord_size(chord);
+    note_t *chord_notes = comp_get_chord_notes(chord);
+
+    // Calculate radians per sample for each individual note
+    for (int n = 0; n < env->chord_size; n++)
+	env->radians_per_note[n] = get_freq_rad(chord_notes[n]) / samples_per_second;
+
+    // Calculate how many samples needed for this chord, depending on
+    // sample rate, bpm and chord duration
+    double chord_seconds = comp_get_chord_duration(comp, chord);
+    env->num_samples = samples_per_second * chord_seconds;
+    
     // Get the x-coordinate of the vertex of the quadratic function of each part of ADSR
-    unsigned long attack_start_vx  = 0;
-    unsigned long attack_end_vx    = num_samples * 0.10; // 10% attack
-    unsigned long decay_start_vx   = attack_end_vx;
-    unsigned long decay_end_vx     = num_samples * 0.20; // 10% decay
-    unsigned long sustain_start_vx = decay_end_vx;
-    unsigned long sustain_end_vx   = num_samples * 0.90; // 70% sustain
-    unsigned long release_start_vx = sustain_end_vx;
-    unsigned long release_end_vx   = num_samples;        // 10% release
+    env->attack_start_vx  = 0;
+    env->attack_end_vx    = env->num_samples * 0.10; // 10% attack
+    env->decay_start_vx   = env->attack_end_vx;
+    env->decay_end_vx     = env->num_samples * 0.20; // 10% decay
+    env->sustain_start_vx = env->decay_end_vx;
+    env->sustain_end_vx   = env->num_samples * 0.90; // 70% sustain
+    env->release_start_vx = env->sustain_end_vx;
+    env->release_end_vx   = env->num_samples;        // 10% release
 
     // Get the y-coordinate of the vertex of the quadratic function of each part of ADSR
-    unsigned long attack_start_vy  = 0;
-    unsigned long attack_end_vy    = amplitude;        // attack peaks volume to 100%
-    unsigned long decay_start_vy   = attack_end_vy;
-    unsigned long decay_end_vy     = amplitude * 0.70; // decay lowers by 30%
-    unsigned long sustain_start_vy = decay_end_vy;
-    unsigned long sustain_end_vy   = sustain_start_vy; // constant sustain
-    unsigned long release_start_vy = sustain_end_vy;
-    unsigned long release_end_vy   = 0;                // release lowers volume to 0
+    env->attack_start_vy  = 0;
+    env->attack_end_vy    = 1;                     // attack peaks volume to 100%
+    env->decay_start_vy   = env->attack_end_vy;
+    env->decay_end_vy     = 0.70;                  // decay lowers by 30%
+    env->sustain_start_vy = env->decay_end_vy;
+    env->sustain_end_vy   = env->sustain_start_vy; // constant sustain
+    env->release_start_vy = env->sustain_end_vy;
+    env->release_end_vy   = 0;                     // release lowers volume to 0
 
     // Get the x-coordinate of the point halfway through the curve of each part of ADSR
-    unsigned long attack_half_px  = (attack_start_vx + attack_end_vx) / 2;
-    unsigned long decay_half_px   = (decay_start_vx + decay_end_vx) / 2;
-    unsigned long sustain_half_px = (sustain_start_vx + sustain_end_vx) / 2;
-    unsigned long release_half_px = (release_start_vx + release_end_vx) / 2;
+    env->attack_half_px  = (env->attack_start_vx + env->attack_end_vx) / 2;
+    env->decay_half_px   = (env->decay_start_vx + env->decay_end_vx) / 2;
+    env->sustain_half_px = (env->sustain_start_vx + env->sustain_end_vx) / 2;
+    env->release_half_px = (env->release_start_vx + env->release_end_vx) / 2;
 
     // Get the y-coordinate of the point halfway through the curve of each part of ADSR
-    unsigned long attack_half_py  = (attack_start_vy + attack_end_vy) / 2;
-    unsigned long decay_half_py   = (decay_start_vy + decay_end_vy) / 2;
-    unsigned long sustain_half_py = (sustain_start_vy + sustain_end_vy) / 2;
-    unsigned long release_half_py = (release_start_vy + release_end_vy) / 2;
+    env->attack_half_py  = (env->attack_start_vy + env->attack_end_vy) / 2;
+    env->decay_half_py   = (env->decay_start_vy + env->decay_end_vy) / 2;
+    env->sustain_half_py = (env->sustain_start_vy + env->sustain_end_vy) / 2;
+    env->release_half_py = (env->release_start_vy + env->release_end_vy) / 2;
 
     // Get the absolute value of the leading coefficient of each ADSR curve
-    double attack_a = fabs(get_quad_func_a(
-	attack_start_vx,
-	attack_start_vy,
-	attack_half_px,
-	attack_half_py));
-    double decay_a = fabs(get_quad_func_a(
-	decay_start_vx,
-	decay_start_vy,
-	decay_half_px,
-	decay_half_py));
-    double sustain_a = fabs(get_quad_func_a(
-	sustain_start_vx,
-	sustain_start_vy,
-	sustain_half_px,
-	sustain_half_py));
-    double release_a = fabs(get_quad_func_a(
-	release_start_vx,
-	release_start_vy,
-	release_half_px,
-	release_half_py));
+    env->attack_a = fabs(get_quad_func_a(
+	env->attack_start_vx,
+	env->attack_start_vy,
+	env->attack_half_px,
+	env->attack_half_py));
+    env->decay_a = fabs(get_quad_func_a(
+	env->decay_start_vx,
+	env->decay_start_vy,
+	env->decay_half_px,
+	env->decay_half_py));
+    env->sustain_a = fabs(get_quad_func_a(
+	env->sustain_start_vx,
+	env->sustain_start_vy,
+	env->sustain_half_px,
+	env->sustain_half_py));
+    env->release_a = fabs(get_quad_func_a(
+	env->release_start_vx,
+	env->release_start_vy,
+	env->release_half_px,
+	env->release_half_py));
 
-    // Add samples for both halves of each phase of ADSR
-    double current_amp = attack_start_vy;
-    long x_diff;
-    unsigned long x;
+    env->amp_level = env->attack_start_vy;
+    env->x = env->attack_start_vx;
+    env->done = false;
 
-    // Attack
-    for (x = attack_start_vx; x < attack_half_px; x++) {
-	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
-	x_diff = x - attack_start_vx;
-	current_amp = attack_a * x_diff * x_diff + attack_start_vy;
-    }
+    return env;
+}
 
-    for (x = attack_half_px; x < attack_end_vx; x++) {
-	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
-	x_diff = x - attack_end_vx;
-	current_amp = -attack_a * x_diff * x_diff + attack_end_vy;
-    }
-
-    // Decay
-    for (x = decay_start_vx; x < decay_half_px; x++) {
-	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
-	x_diff = x - decay_start_vx;
-	current_amp = -decay_a * x_diff * x_diff + decay_start_vy;
-    }
+// Gets the next sample in the ADSR envelope of the current chord.
+// The actual amplitude is not used, only the amplitude level, which
+// is in the range [0,1]. The sample returned will therefore be
+// within the range [-1,1].
+static double get_next_sample(adsr_env_t *env)
+{
+    if (env == NULL)
+	return 0;
     
-    for (x = decay_half_px; x < decay_end_vx; x++) {
-	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
-	x_diff = x - decay_end_vx;
-	current_amp = decay_a * x_diff * x_diff + decay_end_vy;
+    double sample = 0;
+    long x_diff;
+
+    // Sound waves for chords are the sum of the single note frequenzies
+    for (int n = 0; n < env->chord_size; n++)
+	sample += sin(env->radians_per_note[n] * env->x);
+
+    // sin() returns within range [-1, 1], but the sum for all notes will
+    // be in range [-chord_size, chord_size], so amplitude level is divided by
+    // chord_size to make sure sample size doesn't exceed bits per sample
+    sample = (env->amp_level / env->chord_size) * sample;
+    
+    if (env->attack_start_vx <= env->x && env->x < env->attack_half_px) {
+	x_diff = env->x - env->attack_start_vx;
+	env->amp_level = env->attack_a * x_diff * x_diff + env->attack_start_vy;
+    } else if (env->attack_half_px <= env->x && env->x < env->attack_end_vx) {
+	x_diff = env->x - env->attack_end_vx;
+	env->amp_level = -env->attack_a * x_diff * x_diff + env->attack_end_vy;
+    } else if (env->decay_start_vx <= env->x && env->x < env->decay_half_px) {
+	x_diff = env->x - env->decay_start_vx;
+	env->amp_level = -env->decay_a * x_diff * x_diff + env->decay_start_vy;
+    } else if (env->decay_half_px <= env->x && env->x < env->decay_end_vx) {
+	x_diff = env->x - env->decay_end_vx;
+	env->amp_level = env->decay_a * x_diff * x_diff + env->decay_end_vy;
+    } else if (env->sustain_start_vx <= env->x && env->x < env->sustain_half_px) {
+	x_diff = env->x - env->sustain_start_vx;
+	env->amp_level = -env->sustain_a * x_diff * x_diff + env->sustain_start_vy;
+    } else if (env->sustain_half_px <= env->x && env->x < env->sustain_end_vx) {
+	x_diff = env->x - env->sustain_end_vx;
+	env->amp_level = env->sustain_a * x_diff * x_diff + env->sustain_end_vy;
+    } else if (env->release_start_vx <= env->x && env->x < env->release_half_px) {
+	x_diff = env->x - env->release_start_vx;
+	env->amp_level = -env->release_a * x_diff * x_diff + env->release_start_vy;
+    } else if (env->release_half_px <= env->x && env->x < env->release_end_vx) {
+	x_diff = env->x - env->release_end_vx;
+	env->amp_level = env->release_a * x_diff * x_diff + env->release_end_vy;
+    } else {
+	env->done = true;
     }
 
-    // Sustain
-    for (x = sustain_start_vx; x < sustain_half_px; x++) {
-	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
-	x_diff = x - sustain_start_vx;
-	current_amp = -sustain_a * x_diff * x_diff + sustain_start_vy;
-    }
-
-    for (x = sustain_half_px; x < sustain_end_vx; x++) {
-	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
-	x_diff = x - sustain_end_vx;
-	current_amp = sustain_a * x_diff * x_diff + sustain_end_vy;
-    }
-
-    // Release
-    for (x = release_start_vx; x < release_half_px; x++) {
-	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
-	x_diff = x - release_start_vx;
-	current_amp = -release_a * x_diff * x_diff + release_start_vy;
-    }
-
-    for (x = release_half_px; x < release_end_vx; x++) {
-	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
-	x_diff = x - release_end_vx;
-	current_amp = release_a * x_diff * x_diff + release_end_vy;
-    }
+    env->x++;
+    
+    return sample;
 }
 
 static void add_samples_by_comp(wav_t *wav, comp_t *comp)
@@ -484,28 +517,66 @@ static void add_samples_by_comp(wav_t *wav, comp_t *comp)
     double samples_per_second = get_sample_rate(wav);
     double amplitude = get_amplitude(wav);
 
-    // Support for 10 notes per chord
-    float radians_per_note[10];
+    llist_iter_t *trbl_chord_iter, *bass_chord_iter;
+    chord_t *trbl_chord, *bass_chord;
+    adsr_env_t *trbl_chord_env, *bass_chord_env;
+    int trbl_chord_size, bass_chord_size;
 
-    llist_iter_t *chord_iter = comp_get_chords_iterator(comp);
-    chord_t *current_chord = NULL;
+    trbl_chord_iter = comp_get_chords_iterator(comp, TRBL);
+    bass_chord_iter = comp_get_chords_iterator(comp, BASS);
     
-    while ((current_chord = llist_iter_next(chord_iter))) {
-	int chord_size = comp_get_chord_size(current_chord);
-	note_t *chord_notes = comp_get_chord_notes(current_chord);
+    trbl_chord = llist_iter_next(trbl_chord_iter);
+    bass_chord = llist_iter_next(bass_chord_iter);
+    trbl_chord_env = init_adsr_env(comp, trbl_chord, samples_per_second);
+    bass_chord_env = init_adsr_env(comp, bass_chord, samples_per_second);
+    trbl_chord_size = trbl_chord_env ? trbl_chord_env->chord_size : 0;
+    bass_chord_size = bass_chord_env ? bass_chord_env->chord_size : 0;
 
-	// Calculate radians per sample for each individual note
-	for (int n = 0; n < chord_size; n++)
-	    radians_per_note[n] = get_freq_rad(chord_notes[n]) / samples_per_second;
+    // Full normalized sample including both treble and bass
+    // long = support for 32 bit samples
+    long current_sample;
+    
+    while (trbl_chord || bass_chord) {
+	// Get the next sample in ADSR envelopes for treble and bass.
+	// Will be within range [-1,1]
+	double trbl_sample = get_next_sample(trbl_chord_env);
+	double bass_sample = get_next_sample(bass_chord_env);
 
-	// Calculate how many samples needed for this chord, depending on
-	// sample rate, bpm and chord duration
-	double chord_seconds = comp_get_chord_duration(comp, current_chord);
-	unsigned long num_samples = samples_per_second * chord_seconds;
+	int total_chord_size = trbl_chord_size + bass_chord_size;
 
-	//add_chord_samples_adsr(wav, num_samples, chord_size, radians_per_note, amplitude);
-	add_chord_samples_adsr(wav, num_samples, chord_size, radians_per_note, amplitude);
+	// Amplitude is normalized for both treble and bass, depending on
+	// how big part they respectively make out of the combined chord
+	double trbl_sample_norm = (amplitude * trbl_chord_size / total_chord_size) * trbl_sample;
+	double bass_sample_norm = (amplitude * bass_chord_size / total_chord_size) * bass_sample;
+
+	current_sample = trbl_sample_norm + bass_sample_norm;
+
+	// Currently, same sample in all channels
+	unsigned char *sample_frame = malloc(sizeof *sample_frame * wav->fmt->blk_align);
+	for (int c = 0; c < wav->fmt->num_chnls; c++)
+	    memcpy(sample_frame + wav->fmt->blk_align * c, &current_sample, wav->fmt->bps / 8);
+	
+	llist_append(wav->data->samples, sample_frame);
+
+	// If treble chord has ended, get next
+	if (trbl_chord_env && trbl_chord_env->done) {
+	    free(trbl_chord_env);
+	    trbl_chord = llist_iter_next(trbl_chord_iter);
+	    trbl_chord_env = init_adsr_env(comp, trbl_chord, samples_per_second);
+	    trbl_chord_size = trbl_chord_env ? trbl_chord_env->chord_size : 0;
+	}
+
+	// If bass chord has ended, get next
+	if (bass_chord_env && bass_chord_env->done) {
+	    free(bass_chord_env);
+	    bass_chord = llist_iter_next(bass_chord_iter);
+	    bass_chord_env = init_adsr_env(comp, bass_chord, samples_per_second);
+	    bass_chord_size = bass_chord_env ? bass_chord_env->chord_size : 0;
+	}
     }
+
+    llist_iter_free(trbl_chord_iter);
+    llist_iter_free(bass_chord_iter);
 }
 
 static wav_t *read_desc_chunk(FILE *fp)
@@ -725,3 +796,197 @@ static void write_test(wav_t *wav, FILE *fp)
     }
 }
 */
+
+/*
+static void add_chord_sample(
+    wav_t *wav,
+    int chord_size,
+    float *radians_per_note,
+    unsigned long sine_wave_idx,
+    double amplitude)
+{
+    // Support for 32 bit samples
+    long current_sample;
+
+    // Sound waves for chords are the sum of the single note frequenzies
+    double sample_phase = 0;
+    for (int n = 0; n < chord_size; n++)
+	sample_phase += sin(radians_per_note[n] * sine_wave_idx);
+
+    // sin() returns within range [-1, 1], but the sum for all notes will
+    // be in range [-chord_size, chord_size], so amplitude us divided by
+    // chord_size to make sure sample size doesn't exceed bits per sample
+    current_sample = (amplitude / chord_size) * sample_phase;
+
+    // Currently, same sample in all channels
+    unsigned char *sample_frame = malloc(sizeof *sample_frame * wav->fmt->blk_align);
+    for (int c = 0; c < wav->fmt->num_chnls; c++)
+	memcpy(sample_frame + wav->fmt->blk_align * c, &current_sample, wav->fmt->bps / 8);
+	    
+    llist_append(wav->data->samples, sample_frame);
+}
+*/
+
+/*
+// Use quadratic functions to generate the amplitude between each sample.
+// Making sure that the amplitude change factor reaches 0 between phases of ADSR
+// generates a continuous curve, to smoothen the transitions between each phase.
+// This avoids the "popping" sound appearing for the transition between each phase
+// when applying linear change in amplitude.
+// The amplitude curve of each phase is represented by two quadratic functions
+// with the same leading coeffeicient, although negated, meeting each other half
+// way through the x-range of the phase.
+// Simply put, one function is used to represent the entire phase curve, but
+// it's "flipped" in the middle.
+static void add_chord_samples_adsr(
+    wav_t *wav,
+    unsigned long num_samples,
+    int chord_size,
+    float *radians_per_note,
+    double amplitude)
+{
+    // Get the x-coordinate of the vertex of the quadratic function of each part of ADSR
+    unsigned long attack_start_vx  = 0;
+    unsigned long attack_end_vx    = num_samples * 0.10; // 10% attack
+    unsigned long decay_start_vx   = attack_end_vx;
+    unsigned long decay_end_vx     = num_samples * 0.20; // 10% decay
+    unsigned long sustain_start_vx = decay_end_vx;
+    unsigned long sustain_end_vx   = num_samples * 0.90; // 70% sustain
+    unsigned long release_start_vx = sustain_end_vx;
+    unsigned long release_end_vx   = num_samples;        // 10% release
+
+    // Get the y-coordinate of the vertex of the quadratic function of each part of ADSR
+    unsigned long attack_start_vy  = 0;
+    unsigned long attack_end_vy    = amplitude;        // attack peaks volume to 100%
+    unsigned long decay_start_vy   = attack_end_vy;
+    unsigned long decay_end_vy     = amplitude * 0.70; // decay lowers by 30%
+    unsigned long sustain_start_vy = decay_end_vy;
+    unsigned long sustain_end_vy   = sustain_start_vy; // constant sustain
+    unsigned long release_start_vy = sustain_end_vy;
+    unsigned long release_end_vy   = 0;                // release lowers volume to 0
+
+    // Get the x-coordinate of the point halfway through the curve of each part of ADSR
+    unsigned long attack_half_px  = (attack_start_vx + attack_end_vx) / 2;
+    unsigned long decay_half_px   = (decay_start_vx + decay_end_vx) / 2;
+    unsigned long sustain_half_px = (sustain_start_vx + sustain_end_vx) / 2;
+    unsigned long release_half_px = (release_start_vx + release_end_vx) / 2;
+
+    // Get the y-coordinate of the point halfway through the curve of each part of ADSR
+    unsigned long attack_half_py  = (attack_start_vy + attack_end_vy) / 2;
+    unsigned long decay_half_py   = (decay_start_vy + decay_end_vy) / 2;
+    unsigned long sustain_half_py = (sustain_start_vy + sustain_end_vy) / 2;
+    unsigned long release_half_py = (release_start_vy + release_end_vy) / 2;
+
+    // Get the absolute value of the leading coefficient of each ADSR curve
+    double attack_a = fabs(get_quad_func_a(
+	attack_start_vx,
+	attack_start_vy,
+	attack_half_px,
+	attack_half_py));
+    double decay_a = fabs(get_quad_func_a(
+	decay_start_vx,
+	decay_start_vy,
+	decay_half_px,
+	decay_half_py));
+    double sustain_a = fabs(get_quad_func_a(
+	sustain_start_vx,
+	sustain_start_vy,
+	sustain_half_px,
+	sustain_half_py));
+    double release_a = fabs(get_quad_func_a(
+	release_start_vx,
+	release_start_vy,
+	release_half_px,
+	release_half_py));
+
+    // Add samples for both halves of each phase of ADSR
+    double current_amp = attack_start_vy;
+    long x_diff;
+    unsigned long x;
+
+    // Attack
+    for (x = attack_start_vx; x < attack_half_px; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - attack_start_vx;
+	current_amp = attack_a * x_diff * x_diff + attack_start_vy;
+    }
+
+    for (x = attack_half_px; x < attack_end_vx; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - attack_end_vx;
+	current_amp = -attack_a * x_diff * x_diff + attack_end_vy;
+    }
+
+    // Decay
+    for (x = decay_start_vx; x < decay_half_px; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - decay_start_vx;
+	current_amp = -decay_a * x_diff * x_diff + decay_start_vy;
+    }
+    
+    for (x = decay_half_px; x < decay_end_vx; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - decay_end_vx;
+	current_amp = decay_a * x_diff * x_diff + decay_end_vy;
+    }
+
+    // Sustain
+    for (x = sustain_start_vx; x < sustain_half_px; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - sustain_start_vx;
+	current_amp = -sustain_a * x_diff * x_diff + sustain_start_vy;
+    }
+
+    for (x = sustain_half_px; x < sustain_end_vx; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - sustain_end_vx;
+	current_amp = sustain_a * x_diff * x_diff + sustain_end_vy;
+    }
+
+    // Release
+    for (x = release_start_vx; x < release_half_px; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - release_start_vx;
+	current_amp = -release_a * x_diff * x_diff + release_start_vy;
+    }
+
+    for (x = release_half_px; x < release_end_vx; x++) {
+	add_chord_sample(wav, chord_size, radians_per_note, x, current_amp);
+	x_diff = x - release_end_vx;
+	current_amp = release_a * x_diff * x_diff + release_end_vy;
+    }
+}
+*/
+
+/*
+static void add_samples_by_comp(wav_t *wav, comp_t *comp)
+{
+    double samples_per_second = get_sample_rate(wav);
+    double amplitude = get_amplitude(wav);
+
+    // Support for 10 notes per chord
+    float radians_per_note[10];
+
+    llist_iter_t *chord_iter = comp_get_chords_iterator(comp);
+    chord_t *current_chord = NULL;
+    
+    while ((current_chord = llist_iter_next(chord_iter))) {
+	int chord_size = comp_get_chord_size(current_chord);
+	note_t *chord_notes = comp_get_chord_notes(current_chord);
+
+	// Calculate radians per sample for each individual note
+	for (int n = 0; n < chord_size; n++)
+	    radians_per_note[n] = get_freq_rad(chord_notes[n]) / samples_per_second;
+
+	// Calculate how many samples needed for this chord, depending on
+	// sample rate, bpm and chord duration
+	double chord_seconds = comp_get_chord_duration(comp, current_chord);
+	unsigned long num_samples = samples_per_second * chord_seconds;
+
+	add_chord_samples_adsr(wav, num_samples, chord_size, radians_per_note, amplitude);
+    }
+
+    llist_iter_free(chord_iter);
+}
+*/
+
