@@ -63,7 +63,8 @@ void comp_add_chord_4(
 void comp_add_rest(
     comp_t *comp,
     clef_t clef,
-    int dur_denom);
+    int dur_denom,
+    bool dotted);
 int comp_get_chord_size(chord_t *chord);
 note_t *comp_get_chord_notes(chord_t *chord);
 double comp_get_chord_duration(comp_t *comp, chord_t *chord);

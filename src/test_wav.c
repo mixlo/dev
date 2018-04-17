@@ -142,7 +142,7 @@ void add_tetris(comp_t *comp)
     comp_add_chord_2(comp, TRBL,  A5,  E5, 4, false);
     comp_add_chord_2(comp, TRBL,  A5,  E5, 4, false);
 
-    comp_add_rest(comp, TRBL, 4);
+    comp_add_rest(comp, TRBL, 4, false);
 
     comp_add_chord_2(comp, TRBL,  D6,  A5, 4, true);
     comp_add_chord_2(comp, TRBL,  F6,  D6, 8, false);
@@ -236,10 +236,148 @@ void add_tetris(comp_t *comp)
     comp_add_chord_1(comp, BASS,  A4, 4, false);
 }
 
+void add_fireflies(comp_t *comp)
+{
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL,  D6, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, AS5, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, DS5, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, AS4, 16, false);
+    comp_add_chord_1(comp, TRBL,  F5, 16, false);
+    comp_add_chord_1(comp, TRBL, DS5, 16, false);
+    comp_add_chord_1(comp, TRBL,  F5, 16, false);
+    comp_add_chord_1(comp, TRBL, AS5, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, DS5, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL,  C5, 16, false);
+    comp_add_chord_1(comp, TRBL, AS4, 16, false);
+    comp_add_chord_1(comp, TRBL,  C5, 16, false);
+    comp_add_chord_1(comp, TRBL, DS5, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, GS4, 16, false);
+    comp_add_chord_1(comp, TRBL,  C5, 16, false);
+    comp_add_chord_1(comp, TRBL, AS4, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, AS4, 16, false);
+    comp_add_chord_1(comp, TRBL, DS5, 16, false);
+    comp_add_chord_1(comp, TRBL,  F5, 16, false);
+
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL,  D6, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, AS5, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, DS5, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, AS4, 16, false);
+    comp_add_chord_1(comp, TRBL,  F5, 16, false);
+    comp_add_chord_1(comp, TRBL, DS5, 16, false);
+    comp_add_chord_1(comp, TRBL, GS5, 16, false);
+    comp_add_chord_1(comp, TRBL,  G5, 16, false);
+    comp_add_chord_1(comp, TRBL, DS5, 16, false);
+    comp_add_chord_1(comp, TRBL, AS4, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL,  C5, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, AS4, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL,  C5, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL,  C5, 16, false);
+    comp_add_chord_1(comp, TRBL, AS4, 16, false);
+    comp_add_rest(comp, TRBL, 16, false);
+    comp_add_chord_1(comp, TRBL, DS5, 16, false);
+    comp_add_chord_1(comp, TRBL,  F5, 16, false);
+
+    
+    
+    comp_add_chord_1(comp, BASS, AS3, 16, false);
+    comp_add_chord_1(comp, BASS, AS4, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS, AS3, 16, false);
+    comp_add_chord_1(comp, BASS, AS4, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS, DS4, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS, GS3, 16, false);
+    comp_add_chord_1(comp, BASS, DS4, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS, DS4, 16, false);
+    comp_add_chord_1(comp, BASS, GS3, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS,  C4, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    
+    comp_add_chord_1(comp, BASS, AS3, 16, false);
+    comp_add_chord_1(comp, BASS, AS4, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS, AS3, 16, false);
+    comp_add_chord_1(comp, BASS,  F4, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS, DS4, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS, GS3, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS, DS4, 16, false);
+    comp_add_chord_1(comp, BASS, GS3, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS, DS4, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS, GS3, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_chord_1(comp, BASS,  C4, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+    comp_add_rest(comp, BASS, 16, false);
+}
+
 int main(int argc, char *argv[])
 {
     comp_t *comp = comp_new(160);
     add_tetris(comp);
+    
+    //comp_t *comp = comp_new(100);
+    //add_fireflies(comp);
 
     wav_t *wav = wav_new_comp(44100, 1, 16, comp);
     wav_print_info(wav);

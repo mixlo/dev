@@ -136,11 +136,12 @@ void comp_add_chord_4(
 void comp_add_rest(
     comp_t *comp,
     clef_t clef,
-    int dur_denom)
+    int dur_denom,
+    bool dotted)
 {
     note_t *rest = malloc(sizeof *rest);
     *rest = REST;
-    comp_add_chord(comp, 1, clef, rest, dur_denom, false);
+    comp_add_chord(comp, 1, clef, rest, dur_denom, dotted);
 }
 
 int comp_get_chord_size(chord_t *chord)
