@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdbool.h>
 #include <llist.h>
 #include <comp.h>
 
@@ -16,13 +15,13 @@ struct chord {
     int length;
     note_t *notes;
     int dur_denom;
-    bool dotted;
+    int options;
 };
 
 
 
 // ##########  PRIVATE DECLARATIONS  ##########
-static chord_t *chord_new(int length, note_t *notes, int dur_denom, bool dotted);
+static chord_t *chord_new(int length, note_t *notes, int dur_denom, int options);
 static void chord_free(void *chord);
 
 
@@ -67,10 +66,13 @@ void comp_add_chord(
     clef_t clef,
     note_t *notes,
     int dur_denom,
-    bool dotted)
+    int options)
 {
-    chord_t *new_chord = chord_new(length, notes, dur_denom, dotted);
-    llist_append(clef == TRBL ? comp->trbl_chords : comp->bass_chords, new_chord);
+    chord_t *new_chord = chord_new(length, notes, dur_denom, options);
+    llist_append(clef == TRBL
+                 ? comp->trbl_chords
+                 : comp->bass_chords,
+                 new_chord);
 }
 
 void comp_add_chord_1(
@@ -78,11 +80,11 @@ void comp_add_chord_1(
     clef_t clef,
     note_t n1,
     int dur_denom,
-    bool dotted)
+    int options)
 {
     note_t *notes = malloc(sizeof *notes * 1);
     notes[0] = n1;
-    comp_add_chord(comp, 1, clef, notes, dur_denom, dotted);
+    comp_add_chord(comp, 1, clef, notes, dur_denom, options);
 }
 
 void comp_add_chord_2(
@@ -91,12 +93,12 @@ void comp_add_chord_2(
     note_t n1,
     note_t n2,
     int dur_denom,
-    bool dotted)
+    int options)
 {
     note_t *notes = malloc(sizeof *notes * 2);
     notes[0] = n1;
     notes[1] = n2;
-    comp_add_chord(comp, 2, clef, notes, dur_denom, dotted);
+    comp_add_chord(comp, 2, clef, notes, dur_denom, options);
 }
 
 void comp_add_chord_3(
@@ -106,13 +108,13 @@ void comp_add_chord_3(
     note_t n2,
     note_t n3,
     int dur_denom,
-    bool dotted)
+    int options)
 {
     note_t *notes = malloc(sizeof *notes * 3);
     notes[0] = n1;
     notes[1] = n2;
     notes[2] = n3;
-    comp_add_chord(comp, 3, clef, notes, dur_denom, dotted);
+    comp_add_chord(comp, 3, clef, notes, dur_denom, options);
 }
 
 void comp_add_chord_4(
@@ -123,25 +125,25 @@ void comp_add_chord_4(
     note_t n3,
     note_t n4,
     int dur_denom,
-    bool dotted)
+    int options)
 {
     note_t *notes = malloc(sizeof *notes * 4);
     notes[0] = n1;
     notes[1] = n2;
     notes[2] = n3;
     notes[3] = n4;
-    comp_add_chord(comp, 4, clef, notes, dur_denom, dotted);
+    comp_add_chord(comp, 4, clef, notes, dur_denom, options);
 }
 
 void comp_add_rest(
     comp_t *comp,
     clef_t clef,
     int dur_denom,
-    bool dotted)
+    int options)
 {
     note_t *rest = malloc(sizeof *rest);
     *rest = REST;
-    comp_add_chord(comp, 1, clef, rest, dur_denom, dotted);
+    comp_add_chord(comp, 1, clef, rest, dur_denom, options);
 }
 
 int comp_get_chord_size(chord_t *chord)
@@ -156,7 +158,7 @@ note_t *comp_get_chord_notes(chord_t *chord)
 
 double comp_get_chord_duration(comp_t *comp, chord_t *chord)
 {
-    double dot_mult = chord->dotted ? 2.0 / 3.0 : 1;
+    double dot_mult = chord->options & DOTTED ? 2.0 / 3.0 : 1;
     return 60.0 / (comp->bpm * chord->dur_denom * dot_mult) * comp->time_sig_lower;
 }
 
@@ -176,7 +178,7 @@ void comp_free(comp_t *comp)
 
 // ##########   PRIVATE   ##########
 
-static chord_t *chord_new(int length, note_t *notes, int dur_denom, bool dotted)
+static chord_t *chord_new(int length, note_t *notes, int dur_denom, int options)
 {
     chord_t *chord = malloc(sizeof *chord);
 
@@ -184,7 +186,7 @@ static chord_t *chord_new(int length, note_t *notes, int dur_denom, bool dotted)
 	chord->length = length;
 	chord->notes = notes;
 	chord->dur_denom = dur_denom;
-	chord->dotted = dotted;
+	chord->options = options;
     }
     
     return chord;

@@ -537,6 +537,18 @@ static void add_samples_by_comp(wav_t *wav, comp_t *comp)
     long current_sample;
     
     while (trbl_chord || bass_chord) {
+        // TODO: If chord is pitch bent, its ADSR envelope needs to be combined
+        // with that of the next chord, so that the attack and decay only
+        // occurs in the first and the release only occurs in the second.
+        // (Or should it be just one big bent chord?)
+
+        // TODO: For pitch bending, radians_per_note needs to be incremented
+        // for each note so that it exactly matches the beginning note of the
+        // next chord when the chord finishes. This also presumes that the
+        // next chord has the same amount of notes.
+        // (Or does it even presume that it has the exact same structure; can
+        // it pitch bend different notes in the chord in different directions?)
+
 	// Get the next sample in ADSR envelopes for treble and bass.
 	// Will be within range [-1,1]
 	double trbl_sample = get_next_sample(trbl_chord_env);

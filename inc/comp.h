@@ -1,8 +1,12 @@
 #ifndef __COMP_H__
 #define __COMP_H__
 
-#include <stdbool.h>
 #include <llist.h>
+
+// Chord options
+#define NONE   0x0
+#define DOTTED 0x1
+#define BEND   0x2
 
 typedef enum clef clef_t;
 typedef enum note note_t;
@@ -29,20 +33,20 @@ void comp_add_chord(
     clef_t clef,
     note_t *notes,
     int dur_denom,
-    bool dotted);
+    int options);
 void comp_add_chord_1(
     comp_t *comp,
     clef_t clef,
     note_t n1,
     int dur_denom,
-    bool dotted);
+    int options);
 void comp_add_chord_2(
     comp_t *comp,
     clef_t clef,
     note_t n1,
     note_t n2,
     int dur_denom,
-    bool dotted);
+    int options);
 void comp_add_chord_3(
     comp_t *comp,
     clef_t clef,
@@ -50,7 +54,7 @@ void comp_add_chord_3(
     note_t n2,
     note_t n3,
     int dur_denom,
-    bool dotted);
+    int options);
 void comp_add_chord_4(
     comp_t *comp,
     clef_t clef,
@@ -59,12 +63,12 @@ void comp_add_chord_4(
     note_t n3,
     note_t n4,
     int dur_denom,
-    bool dotted);
+    int options);
 void comp_add_rest(
     comp_t *comp,
     clef_t clef,
     int dur_denom,
-    bool dotted);
+    int options);
 int comp_get_chord_size(chord_t *chord);
 note_t *comp_get_chord_notes(chord_t *chord);
 double comp_get_chord_duration(comp_t *comp, chord_t *chord);
